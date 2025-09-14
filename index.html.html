@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>MyMaps-like Editor (map styles + OSM fix)</title>
+
+<!-- Leaflet -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin></script>
+
+<!-- togeojson + jszip -->
+<script src="https://unpkg.com/@tmcw/togeojson@4.7.0/dist/togeojson.umd.js"></script>
+<script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
+
+<style>
+  :root{
+    --panel:#fff; --muted:#5f6b7a; --text:#1f2937; --accent:#1a73e8; --border:#e5e7eb; --bg:#f7f7f8;
+  }
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;}
+  .app{display:grid;grid-template-columns:380px 1fr;height:100vh;}
+  .sidebar{background:var(--panel);border-right:1px solid var(--border);overflow:auto;}
+  .header{padding:10px 12px;border-bottom:1px solid var(--border);}
+  .project-title{font-weight:700;font-size:16px;}
+  .toolbar{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;}
+  .btn{background:#f2f4f7;border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-weight:600;cursor:pointer;}
+  .btn.small{padding:4px 8px;font-size:12px;}
+  .hint{color:var(--muted);font-size:12px;}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  input[type="url"]{width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:6px;padding:6px 8px;background:#fff;color:#111;}
+  select{width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:6px;padding:6px 8px;background:#fff;color:#111;}
+  #map{height:100%;width:100%;}
+  .dropzone{border:2px dashed var(--border);border-radius:10px;margin:12px;padding:12px;text-align:center;color:var(--muted);}
+  .dropzone.dragover{border-color:var(--accent);color:var(--accent);background:#eef3ff;}
+
+  /* Layers + groups */
+  .layers-empty{padding:14px;}
+  .layer{border-bottom:1px solid var(--border);}
+  .layer-head{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px;padding:10px 12px;}
+  .layer-head .title{font-weight:700;}
+  .layer-head .note{font-size:12px;color:var(--muted);}
+  .import-line{padding:8px 12px;background:#f9fafb;border-top:1px solid var(--border);}
+  .import-line .link{color:var(--accent);font-weight:600;cursor:pointer;}
+  .feature{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;padding:8px 12px;border-top:1px solid var(--border);}
+  .feature .name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .group-bullet{width:22px;height:22px;border-radius:999px;display:grid;place-items:center;border:1px solid #d1d5db;background:#111;color:#fff;font-size:12px;font-weight:800;}
+  .toggle{display:inline-grid;place-items:center;width:16px;height:16px;border:1px solid #cbd5e1;border-radius:4px;background:#fff;cursor:pointer;}
+  .toggle.checked{background:#16a34a;border-color:#16a34a;}
+  details.grp {margin:10px 12px;border:1px solid var(--border);border-radius:8px;background:#fff;}
+  details.grp > summary {list-style:none;padding:8px 10px;cursor:pointer;font-weight:700;}
+  details.grp > summary::-webkit-details-marker{display:none;}
+  .grp-list{padding:8px 10px;display:grid;gap:6px;max-height:200px;overflow:auto;}
+  .grp-row{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;}
+
+  /* Portrait YouTube (smaller) */
+  .yt-portrait{
+    width: 220px;
+    aspect-ratio: 9/16;
+    background:#000;border-radius:12px;overflow:hidden;margin:0 0 8px 0;
+  }
+  @media (min-width:480px){ .yt-portrait{ width:260px; } }
+  .yt-portrait > iframe{width:100%;height:100%;display:block;}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="header">
+      <div class="project-title">SQKII GENERAL</div>
+      <div class="toolbar">
+        <button class="btn small" id="upload-btn">Upload files</button>
+        <input id="upload-input" type="file" accept=".kml,.kmz" multiple style="display:none" />
+        <button class="btn small" id="add-layer">Add layer</button>
+        <button class="btn small" id="share">Share</button>
+        <button class="btn small" id="preview">Preview</button>
+      </div>
+
+      <div class="row" style="margin-top:10px;">
+        <input id="url-input" type="url" placeholder="https://example.com/map.kml or .kmz" />
+        <button class="btn small" id="url-load">Load URL</button>
+      </div>
+
+      <div class="row" style="margin-top:10px;">
+        <div>
+          <div class="hint" style="margin-bottom:4px;">Map style</div>
+          <select id="basemap">
+            <option value="carto-light">CARTO Positron (light)</option>
+            <option value="carto-dark">CARTO Dark Matter</option>
+            <option value="esri-streets">Esri World Street Map</option>
+            <option value="osm-standard">OpenStreetMap (standard)</option>
+          </select>
+        </div>
+        <div></div>
+      </div>
+
+      <div class="hint" style="margin-top:6px;">Last edit just now</div>
+    </div>
+
+    <div class="dropzone" id="dz">
+      <div><strong>Drop KML/KMZ here</strong></div>
+      <div class="hint">…or use the Upload button above</div>
+    </div>
+
+    <details class="grp" id="group-visibility" open>
+      <summary>Groups visibility</summary>
+      <div class="grp-list" id="grp-list"></div>
+    </details>
+
+    <div id="layers"></div>
+  </aside>
+
+  <main id="map"></main>
+</div>
+
+<script>
+/* ===================== Map + basemaps ===================== */
+var map = L.map('map').setView([1.3521,103.8198], 12);
+
+// Basemap catalog (safe defaults first)
+var basemaps = {
+  'carto-light': L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    maxZoom: 20,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> contributors, &copy; <a href="https://carto.com/attributions">CARTO</a>'
+  }),
+  'carto-dark': L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    maxZoom: 20,
+    attribution: '&copy; OSM contributors, &copy; CARTO'
+  }),
+  'esri-streets': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 20,
+    attribution: 'Tiles &copy; Esri — Source: Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China (Hong Kong), Esri (Thailand), TomTom, 2012'
+  }),
+  // Use OSM-standard only if you really need it; they may block heavy/abusive use.
+  'osm-standard': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  })
+};
+
+var activeBase = basemaps['carto-light'].addTo(map);
+
+// graceful fallback chain if current tiles error out
+var baseOrder = ['carto-light','esri-streets','carto-dark','osm-standard'];
+function fallbackBase(currentKey){
+  var idx = baseOrder.indexOf(currentKey);
+  for (var i=idx+1; i<baseOrder.length; i++){
+    var key = baseOrder[i];
+    if (basemaps[key]) {
+      map.removeLayer(activeBase);
+      activeBase = basemaps[key].addTo(map);
+      document.getElementById('basemap').value = key;
+      console.warn('Basemap fell back to', key);
+      return;
+    }
+  }
+}
+Object.keys(basemaps).forEach(function(key){
+  basemaps[key].on('tileerror', function(){ fallbackBase(key); });
+});
+
+document.getElementById('basemap').addEventListener('change', function(e){
+  var key = e.target.value;
+  if (basemaps[key]){
+    map.removeLayer(activeBase);
+    activeBase = basemaps[key].addTo(map);
+  }
+});
+
+requestAnimationFrame(function(){ map.invalidateSize(); });
+
+/* ===================== State ===================== */
+var layerSeq=1, featureSeq=1;
+var layerList=[];
+function byId(id){return document.getElementById(id);}
+
+/* ===================== Utils ===================== */
+function kmlColorToCss(aabbggrr){
+  if(!aabbggrr){return {hex:'#000000', opacity:1};}
+  var s=aabbggrr.trim();
+  if(s.length===6) s='ff'+s;
+  var a=parseInt(s.slice(0,2),16)/255;
+  var b=s.slice(2,4), g=s.slice(4,6), r=s.slice(6,8);
+  return {hex:'#'+r+g+b, opacity:a};
+}
+function centerOfLeafletLayer(l){ if(l.getLatLng) return l.getLatLng(); var b=l.getBounds?l.getBounds():null; return (b&&b.isValid())?b.getCenter():map.getCenter(); }
+function makeSVGPin(color,label,size){
+  size=size||28;
+  var svg='<svg xmlns="http://www.w3.org/2000/svg" width="'+size+'" height="'+size+'" viewBox="0 0 32 32"><circle cx="16" cy="16" r="13" fill="'+(color||'#111')+'" stroke="white" stroke-width="1.5"/><text x="16" y="21" text-anchor="middle" font-family="system-ui,Segoe UI,Arial" font-size="14" font-weight="800" fill="white">'+(label||'•')+'</text></svg>';
+  return L.icon({iconUrl:'data:image/svg+xml;utf8,'+encodeURIComponent(svg),iconSize:[size,size],iconAnchor:[size/2,size/2]});
+}
+function defaultLabelFrom(name){ if(!name) return '•'; var c=(name.trim()[0]||'•').toUpperCase(); return /[A-Z0-9$]/.test(c)?c:'•'; }
+function zoomTo(l){ if(l.getBounds){var b=l.getBounds(); if(b&&b.isValid()) map.fitBounds(b.pad(0.2));} else if(l.getLatLng){ map.setView(l.getLatLng(), Math.max(map.getZoom(),16)); } }
+function sanitizeHtml(input){
+  try{
+    var parser=new DOMParser(); var doc=parser.parseFromString('<div>'+input+'</div>','text/html');
+    var allowedTags={A:1,B:1,I:1,EM:1,STRONG:1,P:1,BR:1,UL:1,OL:1,LI:1,IMG:1,DIV:1,SPAN:1};
+    var allowedAttrs={A:['href','title'], IMG:['src','alt','width','height','loading']};
+    (function clean(node){
+      var kids=[...node.childNodes];
+      for(const el of kids){
+        if(el.nodeType===1){
+          if(!allowedTags[el.tagName]){ while(el.firstChild) node.insertBefore(el.firstChild,el); node.removeChild(el); continue; }
+          for(const a of [...el.attributes]){ const ok=(allowedAttrs[el.tagName]||[]); if(!ok.includes(a.name.toLowerCase())) el.removeAttribute(a.name); }
+          if(el.tagName==='A'){ const href=el.getAttribute('href')||''; el.setAttribute('target','_blank'); el.setAttribute('rel','noopener'); if(/^javascript:/i.test(href)) el.removeAttribute('href'); }
+          if(el.tagName==='IMG'){ el.setAttribute('loading','lazy'); }
+          clean(el);
+        }
+      }
+    })(doc.body);
+    return doc.body.firstChild.innerHTML;
+  }catch(e){ return ''; }
+}
+function escapeHtml(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function textContentFromHtml(html){ const tmp=document.createElement('div'); tmp.innerHTML=html; return tmp.textContent||''; }
+async function buildKmzAssetMap(zip){
+  const out={}; const files=Object.values(zip.files);
+  for(const f of files){
+    if(!f.dir && /\.(png|jpe?g|gif|svg)$/i.test(f.name)){
+      out[f.name]=URL.createObjectURL(await f.async('blob'));
+    }
+  }
+  return out;
+}
+function resolveIconHref(href,opts){
+  if(!href) return '';
+  if(/^(https?:|data:|blob:)/i.test(href)) return href;
+  if(opts && opts.assetMap){
+    if(opts.assetMap[href]) return opts.assetMap[href];
+    const base=href.split(/[\\/]/).pop(); for(const k of Object.keys(opts.assetMap)){ if(k===base || k.endsWith('/'+base)) return opts.assetMap[k]; }
+  }
+  if(opts && opts.baseUrl){ try{return new URL(href,opts.baseUrl).href;}catch(e){} }
+  return href;
+}
+function swapToUrlIcon(marker,url,size){
+  const img=new Image(); img.referrerPolicy='no-referrer';
+  img.onload=()=>marker.setIcon(L.icon({iconUrl:url,iconSize:[size,size],iconAnchor:[size/2,size/2]}));
+  img.onerror=()=>{}; img.src=url;
+}
+function findYouTubeId(str){ if(!str) return ''; const m=String(str).match(/(?:youtube\.com\/watch\?[^#\s]*v=|youtu\.be\/|youtube\.com\/embed\/)([A-Za-z0-9_-]{11})/); return m?m[1]:''; }
+function buildYouTubeEmbed(id){
+  if(!id) return '';
+  const src='https://www.youtube-nocookie.com/embed/'+id+'?rel=0&modestbranding=1&playsinline=1';
+  return '<div class="yt-portrait"><iframe src="'+src+'" title="YouTube video" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>';
+}
+function buildPopupHTML(item){
+  const props=(item.gj && item.gj.properties)||{};
+  const name=item.name || props.name || props.Name || props.title || 'Feature';
+  const rawDesc=props.description || props.Description || '';
+  const looksHtml= /<\/?[a-z][\s\S]*>/i.test(rawDesc);
+  let safeHtml = looksHtml ? sanitizeHtml(rawDesc) : escapeHtml(rawDesc).replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener">$1</a>');
+  const id = findYouTubeId(rawDesc) || findYouTubeId(textContentFromHtml(rawDesc));
+  const embed = buildYouTubeEmbed(id);
+  if(id && looksHtml){
+    const tmp=document.createElement('div'); tmp.innerHTML=safeHtml;
+    for(const a of tmp.querySelectorAll('a[href*="youtu"]')) if(findYouTubeId(a.getAttribute('href')||'')) a.remove();
+    safeHtml=tmp.innerHTML;
+  }
+  return '<div style="min-width:260px;max-width:340px;">'
+       + '<div style="font-weight:700;font-size:16px;margin-bottom:6px;">'+escapeHtml(name)+'</div>'
+       + (embed || '')
+       + (safeHtml ? '<div style="font-size:13px;line-height:1.35;color:#374151;">'+safeHtml+'</div>' : '')
+       + '</div>';
+}
+
+/* ===================== KML helpers ===================== */
+function extractKmlMeta(xmlDoc, opts){
+  function t(n,sel){ const el=n.querySelector(sel); return el ? (el.textContent||'').trim():''; }
+  const styleById={}, smById={};
+  for(const s of xmlDoc.querySelectorAll('Style[id], style[id]')) styleById[s.getAttribute('id')]=s;
+  for(const s of xmlDoc.querySelectorAll('StyleMap[id], styleMap[id]')) smById[s.getAttribute('id')]=s;
+
+  function resolveStyleUrl(url){
+    if(!url) return null;
+    const id=url.replace(/^#/,'');
+    const sm=smById[id];
+    if(sm){
+      for(const p of sm.querySelectorAll('Pair')) if(t(p,'key').toLowerCase()==='normal'){ const su=t(p,'styleUrl'); if(su) return resolveStyleUrl(su); }
+    }
+    return styleById[id]||null;
+  }
+  function topFolderName(node){
+    let cur=node.parentNode, top='';
+    while(cur && cur.nodeType===1){
+      if(/Folder/i.test(cur.tagName)){ const nm=t(cur,'name'); if(nm) top=nm; }
+      cur=cur.parentNode;
+    }
+    return top || 'Untitled layer';
+  }
+  function parseStyle(styleEl){
+    if(!styleEl) return {};
+    const iconHref = t(styleEl,'IconStyle Icon href') || t(styleEl,'iconStyle icon href');
+    const lineColor= t(styleEl,'LineStyle color') || t(styleEl,'lineStyle color');
+    const lineWidth= t(styleEl,'LineStyle width') || t(styleEl,'lineStyle width');
+    const polyColor= t(styleEl,'PolyStyle color') || t(styleEl,'polyStyle color');
+    const polyFill = t(styleEl,'PolyStyle fill') || t(styleEl,'polyStyle fill');
+    const polyOutline=t(styleEl,'PolyStyle outline') || t(styleEl,'polyStyle outline');
+    return {
+      iconHref: resolveIconHref(iconHref, opts),
+      lineColor,lineWidth,polyColor,polyFill,polyOutline
+    };
+  }
+
+  const metas=[];
+  for(const pm of xmlDoc.querySelectorAll('Placemark, placemark')){
+    const sEl = resolveStyleUrl(t(pm,'styleUrl'));
+    metas.push({
+      name: t(pm,'name'),
+      topFolder: topFolderName(pm),
+      style: parseStyle(sEl)
+    });
+  }
+  return metas;
+}
+
+/* ===================== Build layers from KML ===================== */
+function addKmlText(text, filename, opts){
+  const xml=new DOMParser().parseFromString(text,'text/xml');
+  const metaList=extractKmlMeta(xml, opts||{});
+  const gj=window.toGeoJSON.kml(xml);
+  if(!gj || !gj.features || !gj.features.length){ alert('No features in '+filename); return; }
+
+  const grouped={};
+  metaList.forEach((m,i)=>{ const f=m.topFolder||'Untitled layer'; (grouped[f]||(grouped[f]=[])).push(i); });
+
+  for(const lname of Object.keys(grouped)){
+    const entry={ id:layerSeq++, name:lname, mode:'individual',
+      uniform:{color:'#111111',label:'•',size:28}, group:L.layerGroup().addTo(map), items:[] };
+
+    for(const idx of grouped[lname]){
+      const f=gj.features[idx], m=metaList[idx];
+      const item={ fid:featureSeq++,
+        name: (m.name || (f.properties && (f.properties.name||f.properties.Name||f.properties.title)) || ('Feature '+featureSeq)),
+        gj:f, leaflet:null, pin:null, visible:true,
+        meta:{mode:'icon', icon:{type:'svg', color:'#111111', label:defaultLabelFrom(m.name), size:28}, kml:{}}
+      };
+      if(m.style.lineColor){ const lc=kmlColorToCss(m.style.lineColor); item.meta.kml.stroke=lc.hex; item.meta.kml.strokeOpacity=lc.opacity; }
+      if(m.style.lineWidth){ const w=parseFloat(m.style.lineWidth); if(!isNaN(w)) item.meta.kml.weight=w; }
+      if(m.style.polyColor){ const pc=kmlColorToCss(m.style.polyColor); item.meta.kml.fill=pc.hex; item.meta.kml.fillOpacity=pc.opacity; }
+      if(m.style.iconHref){ item.meta.icon.type='url'; item.meta.icon.url=m.style.iconHref; item.meta.icon.size=32; }
+      createLeafletForItem(entry,item);
+      entry.items.push(item);
+    }
+    entry.items.sort((a,b)=>(a.name||'').localeCompare(b.name||'')); layerList.push(entry);
+  }
+  renderLayers(); renderGroupsVisibility();
+}
+
+function createLeafletForItem(layerEntry,item){
+  const styleOpt={ color:(item.meta.kml.stroke||'#0b57d0'), weight:(item.meta.kml.weight||2),
+    opacity:(item.meta.kml.strokeOpacity??0.9), fillColor:(item.meta.kml.fill||'#0b57d0'),
+    fillOpacity:(item.meta.kml.fillOpacity??0.2) };
+
+  const geomLayer=L.geoJSON(item.gj,{ style:styleOpt,
+    pointToLayer:(feat,latlng)=>L.circleMarker(latlng,{radius:6,color:styleOpt.color,weight:styleOpt.weight,opacity:styleOpt.opacity,fillColor:styleOpt.fillColor,fillOpacity:styleOpt.fillOpacity})
+  });
+  geomLayer.eachLayer(ch=>{
+    ch.on('click',()=>{ zoomTo(ch); highlightItem(layerEntry.id,item.fid); });
+    ch.bindPopup(buildPopupHTML(item));
+  });
+  item.leaflet=geomLayer; layerEntry.group.addLayer(geomLayer);
+
+  // Sticky popup markers (open on hover/click; close only when clicking elsewhere)
+  const c=centerOfLeafletLayer(geomLayer);
+  if(item.meta.icon.type==='url' && item.meta.icon.url){
+    const pin=L.marker(c,{icon:makeSVGPin('#111','•', item.meta.icon.size||32)});
+    pin.bindPopup(buildPopupHTML(item));
+    pin.on('mouseover',()=>pin.openPopup());
+    pin.on('click',()=>{ pin.openPopup(); zoomTo(pin); highlightItem(layerEntry.id,item.fid); });
+    item.pin=pin; layerEntry.group.addLayer(pin);
+    swapToUrlIcon(pin,item.meta.icon.url,item.meta.icon.size||32);
+  }else{
+    const pin2=L.marker(c,{icon:makeSVGPin(item.meta.icon.color,item.meta.icon.label,item.meta.icon.size)});
+    pin2.bindPopup(buildPopupHTML(item));
+    pin2.on('mouseover',()=>pin2.openPopup());
+    pin2.on('click',()=>{ pin2.openPopup(); zoomTo(pin2); highlightItem(layerEntry.id,item.fid); });
+    item.pin=pin2; layerEntry.group.addLayer(pin2);
+  }
+}
+
+/* ===================== Groups visibility ===================== */
+function renderGroupsVisibility(){
+  const host=byId('grp-list'); host.innerHTML='';
+  if(!layerList.length){ host.innerHTML='<div class="hint">No groups yet.</div>'; return; }
+  for(const entry of layerList){
+    const row=document.createElement('div'); row.className='grp-row';
+    const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=map.hasLayer(entry.group);
+    const name=document.createElement('div'); name.textContent=entry.name;
+    const count=document.createElement('div'); count.className='hint'; count.textContent=entry.items.length;
+    cb.onchange=()=>{ cb.checked?entry.group.addTo(map):map.removeLayer(entry.group); renderLayers(); };
+    row.append(cb,name,count); host.appendChild(row);
+  }
+}
+
+/* ===================== Layers panel (hide list if group unchecked) ===================== */
+function renderLayers(){
+  const host=byId('layers'); host.innerHTML='';
+  if(!layerList.length){
+    const d=document.createElement('div'); d.className='layers-empty';
+    d.innerHTML='<div class="hint">No layers yet. Upload or drop a KML/KMZ.</div>';
+    host.appendChild(d); return;
+  }
+  for(const entry of layerList){
+    const visibleOnMap = map.hasLayer(entry.group);
+    const wrap=document.createElement('div'); wrap.className='layer';
+    const head=document.createElement('div'); head.className='layer-head';
+    const vis=document.createElement('div'); vis.className= visibleOnMap?'toggle checked':'toggle'; vis.title='Show/Hide layer';
+    vis.onclick=()=>{ if(visibleOnMap){ map.removeLayer(entry.group); } else { entry.group.addTo(map); } renderGroupsVisibility(); renderLayers(); };
+    const ttl=document.createElement('div'); ttl.className='title'; ttl.textContent=entry.name;
+    const right=document.createElement('div'); right.className='layer-actions';
+    const note=document.createElement('div'); note.className='note'; note.textContent = visibleOnMap ? '' : '(hidden)';
+    if(note.textContent) right.appendChild(note);
+    head.append(vis,ttl,right); wrap.appendChild(head);
+
+    if(visibleOnMap){
+      const importLine=document.createElement('div'); importLine.className='import-line';
+      const link=document.createElement('span'); link.className='link'; link.textContent='Import';
+      link.onclick=()=>{ const inp=document.createElement('input'); inp.type='file'; inp.accept='.kml,.kmz'; inp.onchange=ev=>{ const f=ev.target.files[0]; if(!f) return; if(f.name.toLowerCase().endsWith('.kmz')) loadKMZFile(f); else f.text().then(txt=>addKmlText(txt,f.name)); }; inp.click(); };
+      importLine.appendChild(link); wrap.appendChild(importLine);
+
+      for(const it of entry.items){
+        const row=document.createElement('div'); row.className='feature';
+        const ico=document.createElement('div'); ico.className='group-bullet'; ico.textContent=(it.meta.icon.type==='svg')?(it.meta.icon.label||'•'):'•';
+        const name=document.createElement('div'); name.className='name'; name.textContent=it.name; name.onclick=()=>{ zoomTo(it.pin||it.leaflet); highlightItem(entry.id,it.fid); };
+        const togg=document.createElement('div'); togg.className=it.visible?'toggle checked':'toggle'; togg.onclick=()=>{ if(it.visible){ entry.group.removeLayer(it.pin); entry.group.removeLayer(it.leaflet); togg.className='toggle'; it.visible=false; } else { entry.group.addLayer(it.pin); entry.group.addLayer(it.leaflet); togg.className='toggle checked'; it.visible=true; } };
+        row.append(ico,name,togg); wrap.appendChild(row);
+      }
+    }
+    host.appendChild(wrap);
+  }
+}
+function highlightItem(layerId,fid){
+  const entry=layerList.find(x=>x.id===layerId); if(!entry) return;
+  const item=entry.items.find(x=>x.fid===fid); if(item && item.pin) item.pin.openPopup();
+}
+
+/* ===================== Loaders ===================== */
+async function loadKMZFile(file){
+  try{
+    const zip=await JSZip.loadAsync(file);
+    const kmlEntry=Object.values(zip.files).find(f=>f.name.toLowerCase().endsWith('.kml'));
+    if(!kmlEntry){ alert('No .kml found inside KMZ: '+file.name); return; }
+    const assetMapP=buildKmzAssetMap(zip);
+    const text=await kmlEntry.async('text');
+    const assetMap=await assetMapP;
+    addKmlText(text,file.name,{assetMap});
+  }catch(e){ console.error(e); alert('Failed to read KMZ: '+file.name); }
+}
+async function loadKMLFromUrl(url){
+  const res=await fetch(url); if(!res.ok) throw new Error('HTTP '+res.status);
+  const text=await res.text(); addKmlText(text, url.split('/').pop()||'remote.kml', {baseUrl:url});
+}
+
+/* ===================== Upload & Drop ===================== */
+byId('upload-btn').onclick=()=>byId('upload-input').click();
+byId('upload-input').addEventListener('change', ev=>{
+  const files=[...(ev.target.files||[])];
+  (function next(i){
+    if(i>=files.length){ ev.target.value=''; return; }
+    const f=files[i];
+    if(f.name.toLowerCase().endsWith('.kmz')) loadKMZFile(f).then(()=>next(i+1));
+    else f.text().then(txt=>{ addKmlText(txt,f.name); next(i+1); });
+  })(0);
+});
+
+byId('dz').addEventListener('dragenter', e=>{ e.preventDefault(); e.currentTarget.classList.add('dragover'); });
+byId('dz').addEventListener('dragover',  e=>{ e.preventDefault(); e.currentTarget.classList.add('dragover'); });
+byId('dz').addEventListener('dragleave', e=>{ e.preventDefault(); e.currentTarget.classList.remove('dragover'); });
+byId('dz').addEventListener('drop', e=>{
+  e.preventDefault(); e.currentTarget.classList.remove('dragover');
+  const files=[...(e.dataTransfer?.files||[])];
+  (function next(i){
+    if(i>=files.length) return;
+    const f=files[i];
+    if(f.name.toLowerCase().endsWith('.kmz')) loadKMZFile(f).then(()=>next(i+1));
+    else f.text().then(txt=>{ addKmlText(txt,f.name); next(i+1); });
+  })(0);
+});
+
+/* URL button */
+byId('url-load').onclick=()=>{
+  const url=byId('url-input').value.trim(); if(!url) return;
+  loadKMLFromUrl(url).catch(e=>{ console.error(e); alert('Failed to load from URL (CORS or bad link).'); });
+};
+
+/* Add empty layer */
+byId('add-layer').onclick=function(){
+  layerList.push({ id:layerSeq++, name:'Untitled layer', mode:'individual', uniform:{color:'#111111',label:'•',size:28}, group:L.layerGroup().addTo(map), items:[] });
+  renderLayers(); renderGroupsVisibility();
+};
+
+/* Dummy buttons */
+byId('share').onclick=()=>alert('Sharing is not implemented in this demo.');
+byId('preview').onclick=()=>alert('Preview mode would hide the editor UI in a deployed build.');
+
+/* Kickoff */
+renderLayers(); renderGroupsVisibility();
+</script>
+</body>
+</html>
