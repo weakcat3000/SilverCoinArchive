@@ -443,11 +443,26 @@ async function loadKMZFile(file){
     const text=await kmlEntry.async('text');
     const assetMap=await assetMapP;
     addKmlText(text,file.name,{assetMap});
-  }catch(e){ console.error(e); alert('Failed to read KMZ: '+file.name); }
+  }catch(e){
+    console.error(e); alert('Failed to read KMZ: '+file.name);
+  }
 }
 async function loadKMLFromUrl(url){
-  const res=await fetch(url); if(!res.ok) throw new Error('HTTP '+res.status);
+  const res=await fetch(url); if(!res.ok) throw new Error('HTTP ' + res.status);
   const text=await res.text(); addKmlText(text, url.split('/').pop()||'remote.kml', {baseUrl:url});
+}
+
+/* NEW: KMZ loader from URL (for preloading) */
+async function loadKMZFromUrl(url){
+  const res = await fetch(url);
+  if(!res.ok) throw new Error('HTTP ' + res.status);
+  const blob = await res.blob();
+  const zip = await JSZip.loadAsync(blob);
+  const kmlEntry = Object.values(zip.files).find(f=>f.name.toLowerCase().endsWith('.kml'));
+  if(!kmlEntry) throw new Error('No .kml inside KMZ');
+  const text = await kmlEntry.async('text');
+  const assetMap = await buildKmzAssetMap(zip);
+  addKmlText(text, url.split('/').pop() || 'remote.kmz', { assetMap });
 }
 
 /* ===================== Upload & Drop ===================== */
@@ -479,7 +494,8 @@ byId('dz').addEventListener('drop', e=>{
 /* URL button */
 byId('url-load').onclick=()=>{
   const url=byId('url-input').value.trim(); if(!url) return;
-  loadKMLFromUrl(url).catch(e=>{ console.error(e); alert('Failed to load from URL (CORS or bad link).'); });
+  (/\.kmz(\?|#|$)/i.test(url) ? loadKMZFromUrl(url) : loadKMLFromUrl(url))
+    .catch(e=>{ console.error(e); alert('Failed to load from URL (CORS or bad link).'); });
 };
 
 /* Add empty layer */
@@ -492,7 +508,17 @@ byId('add-layer').onclick=function(){
 byId('share').onclick=()=>alert('Sharing is not implemented in this demo.');
 byId('preview').onclick=()=>alert('Preview mode would hide the editor UI in a deployed build.');
 
-/* Kickoff */
+/* ===================== Preload your KMZ on open ===================== */
+const PRELOAD_KMZ = 'All Coins Record 2023-2024.kmz'; // adjust path if needed
+window.addEventListener('DOMContentLoaded', ()=>{
+  // encodeURI preserves spaces safely in URLs
+  loadKMZFromUrl(encodeURI(PRELOAD_KMZ)).catch(e=>{
+    console.error('Preload failed:', e);
+    alert('Could not preload KMZ at "'+PRELOAD_KMZ+'". Make sure the file exists on the same domain (to avoid CORS).');
+  });
+});
+
+/* Kickoff (UI render) */
 renderLayers(); renderGroupsVisibility();
 </script>
 </body>
