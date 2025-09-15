@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>MyMaps-like Editor (map styles + OSM fix)</title>
+<title>MyMaps-like Editor (KMZ preload + sidebar toggle)</title>
 
 <!-- Leaflet -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin>
@@ -14,33 +14,28 @@
 <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
 
 <style>
-  :root{
-    --panel:#fff; --muted:#5f6b7a; --text:#1f2937; --accent:#1a73e8; --border:#e5e7eb; --bg:#f7f7f8;
-  }
+  :root{ --panel:#fff; --muted:#5f6b7a; --text:#1f2937; --accent:#1a73e8; --border:#e5e7eb; --bg:#f7f7f8; }
   html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;}
-  .app{display:grid;grid-template-columns:380px 1fr;height:100vh;min-height:100vh;}
 
-  /* collapsed mode */
+  .app{display:grid;grid-template-columns:380px 1fr;height:100vh;min-height:100vh;}
   .app.ui-collapsed{grid-template-columns:0 1fr;}
-  .app.ui-collapsed .sidebar{visibility:hidden; width:0; padding:0; margin:0; border:0;}
+  .app.ui-collapsed .sidebar{visibility:hidden;width:0;padding:0;margin:0;border:0;}
   .app.ui-collapsed #map{width:100%;}
 
   .sidebar{position:relative;background:var(--panel);border-right:1px solid var(--border);overflow:auto;}
   .header{padding:10px 12px 14px;border-bottom:1px solid var(--border);}
-  .project-title{font-weight:700;font-size:16px; padding-right:70px;} /* room for toggle */
+  .project-title{font-weight:700;font-size:16px;padding-right:70px;}
   .toolbar{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;}
   .btn{background:#f2f4f7;border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-weight:600;cursor:pointer;}
   .btn.small{padding:4px 8px;font-size:12px;}
   .hint{color:var(--muted);font-size:12px;}
   .row{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
-  input[type="url"]{width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:6px;padding:6px 8px;background:#fff;color:#111;}
-  select{width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:6px;padding:6px 8px;background:#fff;color:#111;}
+  input[type="url"],select{width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:6px;padding:6px 8px;background:#fff;color:#111;}
   #map{height:100%;width:100%;}
 
   .dropzone{border:2px dashed var(--border);border-radius:10px;margin:12px;padding:12px;text-align:center;color:var(--muted);}
   .dropzone.dragover{border-color:var(--accent);color:var(--accent);background:#eef3ff;}
 
-  /* Layers + groups */
   .layers-empty{padding:14px;}
   .layer{border-bottom:1px solid var(--border);}
   .layer-head{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px;padding:10px 12px;}
@@ -53,23 +48,18 @@
   .group-bullet{width:22px;height:22px;border-radius:999px;display:grid;place-items:center;border:1px solid #d1d5db;background:#111;color:#fff;font-size:12px;font-weight:800;}
   .toggle{display:inline-grid;place-items:center;width:16px;height:16px;border:1px solid #cbd5e1;border-radius:4px;background:#fff;cursor:pointer;}
   .toggle.checked{background:#16a34a;border-color:#16a34a;}
-  details.grp {margin:10px 12px;border:1px solid var(--border);border-radius:8px;background:#fff;}
-  details.grp > summary {list-style:none;padding:8px 10px;cursor:pointer;font-weight:700;}
+  details.grp{margin:10px 12px;border:1px solid var(--border);border-radius:8px;background:#fff;}
+  details.grp > summary{list-style:none;padding:8px 10px;cursor:pointer;font-weight:700;}
   details.grp > summary::-webkit-details-marker{display:none;}
   .grp-list{padding:8px 10px;display:grid;gap:6px;max-height:200px;overflow:auto;}
   .grp-row{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;}
 
-  /* Portrait YouTube (smaller) */
   .yt-portrait{width:220px;aspect-ratio:9/16;background:#000;border-radius:12px;overflow:hidden;margin:0 0 8px 0;}
-  @media (min-width:480px){ .yt-portrait{ width:260px; } }
+  @media (min-width:480px){ .yt-portrait{width:260px;} }
   .yt-portrait > iframe{width:100%;height:100%;display:block;}
 
-  /* Sidebar toggle button (top-right *inside* the sidebar) */
-  .ui-toggle{
-    position:absolute; top:10px; right:10px; z-index:5;
-    background:#fff; border:1px solid var(--border); border-radius:8px;
-    padding:6px 10px; font-weight:700; cursor:pointer; box-shadow:0 1px 6px rgba(0,0,0,.08);
-  }
+  /* Sidebar toggle button (top-right inside sidebar) */
+  .ui-toggle{position:absolute;top:10px;right:10px;z-index:5;background:#fff;border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-weight:700;cursor:pointer;box-shadow:0 1px 6px rgba(0,0,0,.08);}
 </style>
 </head>
 <body>
@@ -125,29 +115,17 @@
 </div>
 
 <script>
-/* ====== CONFIG: preload file (path relative to index.html) ====== */
-const PRELOAD_KMZ = 'All Coins Record 2023-2024.kmz'; // change if you move the file
+/* ====== CONFIG: path to the preload file (relative to index.html) ====== */
+const PRELOAD_KMZ = 'All Coins Record 2023-2024.kmz';
 
 /* ===================== Map + basemaps ===================== */
 var map = L.map('map').setView([1.3521,103.8198], 12);
 
 var basemaps = {
-  'carto-light': L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-    maxZoom: 20,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> contributors, &copy; <a href="https://carto.com/attributions">CARTO</a>'
-  }),
-  'carto-dark': L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    maxZoom: 20,
-    attribution: '&copy; OSM contributors, &copy; CARTO'
-  }),
-  'esri-streets': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
-    maxZoom: 20,
-    attribution: 'Tiles &copy; Esri — Source: Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China (Hong Kong), Esri (Thailand), TomTom, 2012'
-  }),
-  'osm-standard': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-  })
+  'carto-light': L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { maxZoom: 20, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> contributors, &copy; <a href="https://carto.com/attributions">CARTO</a>' }),
+  'carto-dark':  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',  { maxZoom: 20, attribution: '&copy; OSM contributors, &copy; CARTO' }),
+  'esri-streets': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, attribution: 'Tiles &copy; Esri — Sources: Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, METI, TomTom' }),
+  'osm-standard': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' })
 };
 
 var activeBase = basemaps['carto-light'].addTo(map);
@@ -185,10 +163,8 @@ function byId(id){return document.getElementById(id);}
 /* ===================== Utils ===================== */
 function kmlColorToCss(aabbggrr){
   if(!aabbggrr){return {hex:'#000000', opacity:1};}
-  var s=aabbggrr.trim();
-  if(s.length===6) s='ff'+s;
-  var a=parseInt(s.slice(0,2),16)/255;
-  var b=s.slice(2,4), g=s.slice(4,6), r=s.slice(6,8);
+  var s=aabbggrr.trim(); if(s.length===6) s='ff'+s;
+  var a=parseInt(s.slice(0,2),16)/255, b=s.slice(2,4), g=s.slice(4,6), r=s.slice(6,8);
   return {hex:'#'+r+g+b, opacity:a};
 }
 function centerOfLeafletLayer(l){ if(l.getLatLng) return l.getLatLng(); var b=l.getBounds?l.getBounds():null; return (b&&b.isValid())?b.getCenter():map.getCenter(); }
@@ -223,11 +199,7 @@ function escapeHtml(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&l
 function textContentFromHtml(html){ const tmp=document.createElement('div'); tmp.innerHTML=html; return tmp.textContent||''; }
 async function buildKmzAssetMap(zip){
   const out={}; const files=Object.values(zip.files);
-  for(const f of files){
-    if(!f.dir && /\.(png|jpe?g|gif|svg)$/i.test(f.name)){
-      out[f.name]=URL.createObjectURL(await f.async('blob'));
-    }
-  }
+  for(const f of files){ if(!f.dir && /\.(png|jpe?g|gif|svg)$/i.test(f.name)){ out[f.name]=URL.createObjectURL(await f.async('blob')); } }
   return out;
 }
 function resolveIconHref(href,opts){
@@ -235,7 +207,8 @@ function resolveIconHref(href,opts){
   if(/^(https?:|data:|blob:)/i.test(href)) return href;
   if(opts && opts.assetMap){
     if(opts.assetMap[href]) return opts.assetMap[href];
-    const base=href.split(/[\\/]/).pop(); for(const k of Object.keys(opts.assetMap)){ if(k===base || k.endsWith('/'+base)) return opts.assetMap[k]; }
+    const base=href.split(/[\\/]/).pop();
+    for(const k of Object.keys(opts.assetMap)){ if(k===base || k.endsWith('/'+base)) return opts.assetMap[k]; }
   }
   if(opts && opts.baseUrl){ try{return new URL(href,opts.baseUrl).href;}catch(e){} }
   return href;
@@ -455,8 +428,25 @@ async function loadKMZFile(file){
   }catch(e){ console.error(e); alert('Failed to read KMZ: '+file.name); }
 }
 async function loadKMLFromUrl(url){
-  const res=await fetch(url); if(!res.ok) throw new Error('HTTP '+res.status);
-  const text=await res.text(); addKmlText(text, url.split('/').pop()||'remote.kml', {baseUrl:url});
+  const res=await fetch(url); if(!res.ok) throw new Error('HTTP ' + res.status);
+  const text=await res.text();
+  addKmlText(text, url.split('/').pop()||'remote.kml', {baseUrl:url});
+}
+// NEW: auto-detect KML vs KMZ from URL
+async function loadKMLorKMZFromUrl(url){
+  if (/\.kmz(\?|#|$)/i.test(url)) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const buf = await res.arrayBuffer();
+    const zip = await JSZip.loadAsync(buf);
+    const kmlEntry = Object.values(zip.files).find(f => /\.kml$/i.test(f.name));
+    if (!kmlEntry) throw new Error('No .kml found inside KMZ');
+    const assetMap = await buildKmzAssetMap(zip);
+    const text = await kmlEntry.async('text');
+    addKmlText(text, url.split('/').pop() || 'remote.kmz', { assetMap, baseUrl: url });
+  } else {
+    await loadKMLFromUrl(url);
+  }
 }
 
 /* ===================== Upload & Drop ===================== */
@@ -487,12 +477,13 @@ byId('dz').addEventListener('drop', e=>{
 /* URL button */
 byId('url-load').onclick=()=>{
   const url=byId('url-input').value.trim(); if(!url) return;
-  loadKMLFromUrl(url).catch(e=>{ console.error(e); alert('Failed to load from URL (CORS or bad link).'); });
+  loadKMLorKMZFromUrl(url).catch(e=>{ console.error(e); alert('Failed to load from URL (CORS or bad link).'); });
 };
 
 /* Add empty layer */
 byId('add-layer').onclick=function(){
-  layerList.push({ id:layerSeq++, name:'Untitled layer', mode:'individual', uniform:{color:'#111111',label:'•',size:28}, group:L.layerGroup().addTo(map), items:[] });
+  layerList.push({ id:layerSeq++, name:'Untitled layer', mode:'individual',
+    uniform:{color:'#111111',label:'•',size:28}, group:L.layerGroup().addTo(map), items:[] });
   renderLayers(); renderGroupsVisibility();
 };
 
@@ -515,13 +506,14 @@ uiToggle.addEventListener('click', () => {
 (async function preload(){
   if(!PRELOAD_KMZ) return;
   try{
-    await loadKMLFromUrl(encodeURI(PRELOAD_KMZ));
+    await loadKMLorKMZFromUrl(PRELOAD_KMZ);
   }catch(e){
     console.warn('Preload failed:', e);
   }
 })();
 
 /* Kickoff UI */
+function renderGroupsVisibility(){ /* (already defined above; keep order) */ }
 renderLayers(); renderGroupsVisibility();
 </script>
 </body>
