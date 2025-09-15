@@ -18,7 +18,11 @@
     --panel:#fff; --muted:#5f6b7a; --text:#1f2937; --accent:#1a73e8; --border:#e5e7eb; --bg:#f7f7f8;
   }
   html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;}
-  .app{display:grid;grid-template-columns:380px 1fr;height:100vh;}
+  .app{display:grid;grid-template-columns:380px 1fr;height:100vh;position:relative;}
+  /* collapsed mode */
+  .app.ui-collapsed{grid-template-columns:0 1fr;}
+  .app.ui-collapsed .sidebar{display:none;}
+
   .sidebar{background:var(--panel);border-right:1px solid var(--border);overflow:auto;}
   .header{padding:10px 12px;border-bottom:1px solid var(--border);}
   .project-title{font-weight:700;font-size:16px;}
@@ -29,7 +33,7 @@
   .row{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
   input[type="url"]{width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:6px;padding:6px 8px;background:#fff;color:#111;}
   select{width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:6px;padding:6px 8px;background:#fff;color:#111;}
-  #map{height:100%;width:100%;}
+  #map{height:100%;width:100%;position:relative;}
   .dropzone{border:2px dashed var(--border);border-radius:10px;margin:12px;padding:12px;text-align:center;color:var(--muted);}
   .dropzone.dragover{border-color:var(--accent);color:var(--accent);background:#eef3ff;}
 
@@ -60,10 +64,17 @@
   }
   @media (min-width:480px){ .yt-portrait{ width:260px; } }
   .yt-portrait > iframe{width:100%;height:100%;display:block;}
+
+  /* Map UI toggle button (top-right) */
+  .ui-toggle{
+    position:absolute; top:12px; right:12px; z-index:1000;
+    background:#fff; border:1px solid var(--border); border-radius:8px;
+    padding:6px 10px; font-weight:700; cursor:pointer; box-shadow:0 1px 6px rgba(0,0,0,.08);
+  }
 </style>
 </head>
 <body>
-<div class="app">
+<div class="app" id="app">
   <aside class="sidebar">
     <div class="header">
       <div class="project-title">SQKII GENERAL</div>
@@ -109,7 +120,10 @@
     <div id="layers"></div>
   </aside>
 
-  <main id="map"></main>
+  <main id="map">
+    <!-- Top-right toggle -->
+    <button id="ui-toggle" class="ui-toggle" aria-pressed="false" title="Hide UI">Hide UI</button>
+  </main>
 </div>
 
 <script>
@@ -443,26 +457,11 @@ async function loadKMZFile(file){
     const text=await kmlEntry.async('text');
     const assetMap=await assetMapP;
     addKmlText(text,file.name,{assetMap});
-  }catch(e){
-    console.error(e); alert('Failed to read KMZ: '+file.name);
-  }
+  }catch(e){ console.error(e); alert('Failed to read KMZ: '+file.name); }
 }
 async function loadKMLFromUrl(url){
-  const res=await fetch(url); if(!res.ok) throw new Error('HTTP ' + res.status);
+  const res=await fetch(url); if(!res.ok) throw new Error('HTTP '+res.status);
   const text=await res.text(); addKmlText(text, url.split('/').pop()||'remote.kml', {baseUrl:url});
-}
-
-/* NEW: KMZ loader from URL (for preloading) */
-async function loadKMZFromUrl(url){
-  const res = await fetch(url);
-  if(!res.ok) throw new Error('HTTP ' + res.status);
-  const blob = await res.blob();
-  const zip = await JSZip.loadAsync(blob);
-  const kmlEntry = Object.values(zip.files).find(f=>f.name.toLowerCase().endsWith('.kml'));
-  if(!kmlEntry) throw new Error('No .kml inside KMZ');
-  const text = await kmlEntry.async('text');
-  const assetMap = await buildKmzAssetMap(zip);
-  addKmlText(text, url.split('/').pop() || 'remote.kmz', { assetMap });
 }
 
 /* ===================== Upload & Drop ===================== */
@@ -494,8 +493,7 @@ byId('dz').addEventListener('drop', e=>{
 /* URL button */
 byId('url-load').onclick=()=>{
   const url=byId('url-input').value.trim(); if(!url) return;
-  (/\.kmz(\?|#|$)/i.test(url) ? loadKMZFromUrl(url) : loadKMLFromUrl(url))
-    .catch(e=>{ console.error(e); alert('Failed to load from URL (CORS or bad link).'); });
+  loadKMLFromUrl(url).catch(e=>{ console.error(e); alert('Failed to load from URL (CORS or bad link).'); });
 };
 
 /* Add empty layer */
@@ -508,17 +506,19 @@ byId('add-layer').onclick=function(){
 byId('share').onclick=()=>alert('Sharing is not implemented in this demo.');
 byId('preview').onclick=()=>alert('Preview mode would hide the editor UI in a deployed build.');
 
-/* ===================== Preload your KMZ on open ===================== */
-const PRELOAD_KMZ = 'All Coins Record 2023-2024.kmz'; // adjust path if needed
-window.addEventListener('DOMContentLoaded', ()=>{
-  // encodeURI preserves spaces safely in URLs
-  loadKMZFromUrl(encodeURI(PRELOAD_KMZ)).catch(e=>{
-    console.error('Preload failed:', e);
-    alert('Could not preload KMZ at "'+PRELOAD_KMZ+'". Make sure the file exists on the same domain (to avoid CORS).');
-  });
+/* ===== UI toggle behaviour ===== */
+const appEl = document.getElementById('app');
+const uiToggle = document.getElementById('ui-toggle');
+uiToggle.addEventListener('click', () => {
+  appEl.classList.toggle('ui-collapsed');
+  const collapsed = appEl.classList.contains('ui-collapsed');
+  uiToggle.textContent = collapsed ? 'Show UI' : 'Hide UI';
+  uiToggle.title = collapsed ? 'Show UI' : 'Hide UI';
+  // Let layout settle, then fix map size
+  setTimeout(() => map.invalidateSize(), 200);
 });
 
-/* Kickoff (UI render) */
+/* Kickoff */
 renderLayers(); renderGroupsVisibility();
 </script>
 </body>
