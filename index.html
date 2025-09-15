@@ -18,8 +18,21 @@
     --panel:#fff; --muted:#5f6b7a; --text:#1f2937; --accent:#1a73e8; --border:#e5e7eb; --bg:#f7f7f8;
   }
   html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;}
-  .app{display:grid;grid-template-columns:380px 1fr;height:100vh;}
-  .sidebar{background:var(--panel);border-right:1px solid var(--border);overflow:auto;}
+  .app{position:relative;display:grid;grid-template-columns:380px 1fr;height:100vh;}
+
+  /* When collapsed, we keep the map full-screen and show a small reopen button */
+  .app.ui-collapsed{grid-template-columns:0 1fr;}
+  .app.ui-collapsed .sidebar{visibility:hidden;width:0;padding:0;margin:0;border:0;}
+
+  /* Open UI (reopen) button that floats over the map when sidebar is collapsed */
+  .ui-reopen{
+    position:absolute; left:10px; top:10px; z-index:600;
+    display:none; background:#fff; border:1px solid var(--border); border-radius:8px;
+    padding:6px 10px; font-weight:700; cursor:pointer; box-shadow:0 1px 6px rgba(0,0,0,.08);
+  }
+  .app.ui-collapsed .ui-reopen{ display:inline-block; }
+
+  .sidebar{position:relative;background:var(--panel);border-right:1px solid var(--border);overflow:auto;}
   .header{padding:10px 12px;border-bottom:1px solid var(--border);}
   .project-title{font-weight:700;font-size:16px;}
   .toolbar{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;}
@@ -60,11 +73,24 @@
   }
   @media (min-width:480px){ .yt-portrait{ width:260px; } }
   .yt-portrait > iframe{width:100%;height:100%;display:block;}
+
+  /* Hide UI button (top-right of the sidebar) */
+  .ui-hide{
+    position:absolute; top:10px; right:10px; z-index:610;
+    background:#fff;border:1px solid var(--border);border-radius:8px;padding:6px 10px;
+    font-weight:700;cursor:pointer;box-shadow:0 1px 6px rgba(0,0,0,.08);
+  }
 </style>
 </head>
 <body>
-<div class="app">
+<div class="app" id="app">
+  <!-- Reopen button shown only when collapsed -->
+  <button id="ui-reopen" class="ui-reopen" title="Open UI">Open UI</button>
+
   <aside class="sidebar">
+    <!-- Hide button lives INSIDE the UI (top-right of the sidebar) -->
+    <button id="ui-hide" class="ui-hide" title="Hide UI">Hide UI</button>
+
     <div class="header">
       <div class="project-title">SQKII GENERAL</div>
       <div class="toolbar">
@@ -271,7 +297,7 @@ function extractKmlMeta(xmlDoc, opts){
 
   function resolveStyleUrl(url){
     if(!url) return null;
-    const id=url.replace(/^#/,'');
+    const id=url.replace(/^#/, '');
     const sm=smById[id];
     if(sm){
       for(const p of sm.querySelectorAll('Pair')) if(t(p,'key').toLowerCase()==='normal'){ const su=t(p,'styleUrl'); if(su) return resolveStyleUrl(su); }
@@ -359,7 +385,7 @@ function createLeafletForItem(layerEntry,item){
   });
   item.leaflet=geomLayer; layerEntry.group.addLayer(geomLayer);
 
-  // Sticky popup markers (open on hover/click; close only when clicking elsewhere)
+  // Sticky popup markers
   const c=centerOfLeafletLayer(geomLayer);
   if(item.meta.icon.type==='url' && item.meta.icon.url){
     const pin=L.marker(c,{icon:makeSVGPin('#111','•', item.meta.icon.size||32)});
@@ -511,11 +537,24 @@ byId('preview').onclick=()=>alert('Preview mode would hide the editor UI in a de
 /* ===================== Preload your KMZ on open ===================== */
 const PRELOAD_KMZ = 'All Coins Record 2023-2024.kmz'; // adjust path if needed
 window.addEventListener('DOMContentLoaded', ()=>{
-  // encodeURI preserves spaces safely in URLs
   loadKMZFromUrl(encodeURI(PRELOAD_KMZ)).catch(e=>{
     console.error('Preload failed:', e);
     alert('Could not preload KMZ at "'+PRELOAD_KMZ+'". Make sure the file exists on the same domain (to avoid CORS).');
   });
+});
+
+/* ===================== Sidebar minimize / reopen ===================== */
+const appEl = document.getElementById('app');
+const btnHide = document.getElementById('ui-hide');
+const btnReopen = document.getElementById('ui-reopen');
+
+btnHide.addEventListener('click', ()=>{
+  appEl.classList.add('ui-collapsed');
+  setTimeout(()=>map.invalidateSize(), 150);
+});
+btnReopen.addEventListener('click', ()=>{
+  appEl.classList.remove('ui-collapsed');
+  setTimeout(()=>map.invalidateSize(), 150);
 });
 
 /* Kickoff (UI render) */
