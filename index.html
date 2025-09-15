@@ -18,10 +18,16 @@
     --panel:#fff; --muted:#5f6b7a; --text:#1f2937; --accent:#1a73e8; --border:#e5e7eb; --bg:#f7f7f8;
   }
   html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;}
-  .app{display:grid;grid-template-columns:380px 1fr;height:100vh;}
-  .sidebar{background:var(--panel);border-right:1px solid var(--border);overflow:auto;}
-  .header{padding:10px 12px;border-bottom:1px solid var(--border);}
-  .project-title{font-weight:700;font-size:16px;}
+  .app{display:grid;grid-template-columns:380px 1fr;height:100vh;min-height:100vh;}
+
+  /* collapsed mode */
+  .app.ui-collapsed{grid-template-columns:0 1fr;}
+  .app.ui-collapsed .sidebar{visibility:hidden; width:0; padding:0; margin:0; border:0;}
+  .app.ui-collapsed #map{width:100%;}
+
+  .sidebar{position:relative;background:var(--panel);border-right:1px solid var(--border);overflow:auto;}
+  .header{padding:10px 12px 14px;border-bottom:1px solid var(--border);}
+  .project-title{font-weight:700;font-size:16px; padding-right:70px;} /* room for toggle */
   .toolbar{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;}
   .btn{background:#f2f4f7;border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-weight:600;cursor:pointer;}
   .btn.small{padding:4px 8px;font-size:12px;}
@@ -30,6 +36,7 @@
   input[type="url"]{width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:6px;padding:6px 8px;background:#fff;color:#111;}
   select{width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:6px;padding:6px 8px;background:#fff;color:#111;}
   #map{height:100%;width:100%;}
+
   .dropzone{border:2px dashed var(--border);border-radius:10px;margin:12px;padding:12px;text-align:center;color:var(--muted);}
   .dropzone.dragover{border-color:var(--accent);color:var(--accent);background:#eef3ff;}
 
@@ -53,18 +60,23 @@
   .grp-row{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;}
 
   /* Portrait YouTube (smaller) */
-  .yt-portrait{
-    width: 220px;
-    aspect-ratio: 9/16;
-    background:#000;border-radius:12px;overflow:hidden;margin:0 0 8px 0;
-  }
+  .yt-portrait{width:220px;aspect-ratio:9/16;background:#000;border-radius:12px;overflow:hidden;margin:0 0 8px 0;}
   @media (min-width:480px){ .yt-portrait{ width:260px; } }
   .yt-portrait > iframe{width:100%;height:100%;display:block;}
+
+  /* Sidebar toggle button (top-right *inside* the sidebar) */
+  .ui-toggle{
+    position:absolute; top:10px; right:10px; z-index:5;
+    background:#fff; border:1px solid var(--border); border-radius:8px;
+    padding:6px 10px; font-weight:700; cursor:pointer; box-shadow:0 1px 6px rgba(0,0,0,.08);
+  }
 </style>
 </head>
 <body>
-<div class="app">
-  <aside class="sidebar">
+<div class="app" id="app">
+  <aside class="sidebar" id="sidebar">
+    <button id="ui-toggle" class="ui-toggle" aria-pressed="false" title="Hide UI">Hide UI</button>
+
     <div class="header">
       <div class="project-title">SQKII GENERAL</div>
       <div class="toolbar">
@@ -113,10 +125,12 @@
 </div>
 
 <script>
+/* ====== CONFIG: preload file (path relative to index.html) ====== */
+const PRELOAD_KMZ = 'All Coins Record 2023-2024.kmz'; // change if you move the file
+
 /* ===================== Map + basemaps ===================== */
 var map = L.map('map').setView([1.3521,103.8198], 12);
 
-// Basemap catalog (safe defaults first)
 var basemaps = {
   'carto-light': L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
     maxZoom: 20,
@@ -130,7 +144,6 @@ var basemaps = {
     maxZoom: 20,
     attribution: 'Tiles &copy; Esri — Source: Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China (Hong Kong), Esri (Thailand), TomTom, 2012'
   }),
-  // Use OSM-standard only if you really need it; they may block heavy/abusive use.
   'osm-standard': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -138,8 +151,6 @@ var basemaps = {
 };
 
 var activeBase = basemaps['carto-light'].addTo(map);
-
-// graceful fallback chain if current tiles error out
 var baseOrder = ['carto-light','esri-streets','carto-dark','osm-standard'];
 function fallbackBase(currentKey){
   var idx = baseOrder.indexOf(currentKey);
@@ -157,7 +168,6 @@ function fallbackBase(currentKey){
 Object.keys(basemaps).forEach(function(key){
   basemaps[key].on('tileerror', function(){ fallbackBase(key); });
 });
-
 document.getElementById('basemap').addEventListener('change', function(e){
   var key = e.target.value;
   if (basemaps[key]){
@@ -165,7 +175,6 @@ document.getElementById('basemap').addEventListener('change', function(e){
     activeBase = basemaps[key].addTo(map);
   }
 });
-
 requestAnimationFrame(function(){ map.invalidateSize(); });
 
 /* ===================== State ===================== */
@@ -359,7 +368,6 @@ function createLeafletForItem(layerEntry,item){
   });
   item.leaflet=geomLayer; layerEntry.group.addLayer(geomLayer);
 
-  // Sticky popup markers (open on hover/click; close only when clicking elsewhere)
   const c=centerOfLeafletLayer(geomLayer);
   if(item.meta.icon.type==='url' && item.meta.icon.url){
     const pin=L.marker(c,{icon:makeSVGPin('#111','•', item.meta.icon.size||32)});
@@ -391,7 +399,7 @@ function renderGroupsVisibility(){
   }
 }
 
-/* ===================== Layers panel (hide list if group unchecked) ===================== */
+/* ===================== Layers panel ===================== */
 function renderLayers(){
   const host=byId('layers'); host.innerHTML='';
   if(!layerList.length){
@@ -421,7 +429,8 @@ function renderLayers(){
         const row=document.createElement('div'); row.className='feature';
         const ico=document.createElement('div'); ico.className='group-bullet'; ico.textContent=(it.meta.icon.type==='svg')?(it.meta.icon.label||'•'):'•';
         const name=document.createElement('div'); name.className='name'; name.textContent=it.name; name.onclick=()=>{ zoomTo(it.pin||it.leaflet); highlightItem(entry.id,it.fid); };
-        const togg=document.createElement('div'); togg.className=it.visible?'toggle checked':'toggle'; togg.onclick=()=>{ if(it.visible){ entry.group.removeLayer(it.pin); entry.group.removeLayer(it.leaflet); togg.className='toggle'; it.visible=false; } else { entry.group.addLayer(it.pin); entry.group.addLayer(it.leaflet); togg.className='toggle checked'; it.visible=true; } };
+        const togg=document.createElement('div'); togg.className=it.visible?'toggle checked':'toggle';
+        togg.onclick=()=>{ if(it.visible){ entry.group.removeLayer(it.pin); entry.group.removeLayer(it.leaflet); togg.className='toggle'; it.visible=false; } else { entry.group.addLayer(it.pin); entry.group.addLayer(it.leaflet); togg.className='toggle checked'; it.visible=true; } };
         row.append(ico,name,togg); wrap.appendChild(row);
       }
     }
@@ -461,7 +470,6 @@ byId('upload-input').addEventListener('change', ev=>{
     else f.text().then(txt=>{ addKmlText(txt,f.name); next(i+1); });
   })(0);
 });
-
 byId('dz').addEventListener('dragenter', e=>{ e.preventDefault(); e.currentTarget.classList.add('dragover'); });
 byId('dz').addEventListener('dragover',  e=>{ e.preventDefault(); e.currentTarget.classList.add('dragover'); });
 byId('dz').addEventListener('dragleave', e=>{ e.preventDefault(); e.currentTarget.classList.remove('dragover'); });
@@ -492,7 +500,28 @@ byId('add-layer').onclick=function(){
 byId('share').onclick=()=>alert('Sharing is not implemented in this demo.');
 byId('preview').onclick=()=>alert('Preview mode would hide the editor UI in a deployed build.');
 
-/* Kickoff */
+/* ===== UI toggle (inside sidebar) ===== */
+const appEl = document.getElementById('app');
+const uiToggle = document.getElementById('ui-toggle');
+uiToggle.addEventListener('click', () => {
+  appEl.classList.toggle('ui-collapsed');
+  const collapsed = appEl.classList.contains('ui-collapsed');
+  uiToggle.textContent = collapsed ? 'Show UI' : 'Hide UI';
+  uiToggle.title = collapsed ? 'Show UI' : 'Hide UI';
+  setTimeout(() => map.invalidateSize(), 200);
+});
+
+/* ===== Auto-preload KMZ on first load ===== */
+(async function preload(){
+  if(!PRELOAD_KMZ) return;
+  try{
+    await loadKMLFromUrl(encodeURI(PRELOAD_KMZ));
+  }catch(e){
+    console.warn('Preload failed:', e);
+  }
+})();
+
+/* Kickoff UI */
 renderLayers(); renderGroupsVisibility();
 </script>
 </body>
