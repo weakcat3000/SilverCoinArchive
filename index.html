@@ -56,30 +56,20 @@
     details.grp>summary{list-style:none;padding:10px 12px;cursor:pointer;font-weight:700;}
     details.grp>summary::-webkit-details-marker{display:none;}
     .grp-list{padding:8px 12px;display:grid;gap:6px;max-height:220px;overflow:auto;}
-    .yt-portrait{width:240px;aspect-ratio:9/16;background:#000;border-radius:12px;overflow:hidden;margin:0 0 8px 0;}
+    .yt-portrait{width:240px;aspect-ratio:9/16;background:#000;border-radius:12px;overflow:hidden;margin:8px auto;} /* centered */
     @media (min-width:480px){ .yt-portrait{ width:260px; } }
     .yt-portrait>iframe{width:100%;height:100%;display:block;border:0}
     .ui-hide{position:absolute;top:10px;right:10px;z-index:1001;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:6px 10px;font-weight:700;cursor:pointer;box-shadow:0 2px 14px rgba(0,0,0,.35);color:var(--text);}
     a{color:var(--accent);}
-
-    /* Dark popups */
     .maplibregl-popup-content{background:#0f1115;color:#e5e7eb;border:1px solid #1f2430;border-radius:12px;}
     .maplibregl-popup-tip{border-top-color:#0f1115 !important;border-bottom-color:#0f1115 !important;border-left-color:#0f1115 !important;border-right-color:#0f1115 !important;}
     .leaflet-popup-content-wrapper{background:#0f1115;color:#e5e7eb;border:1px solid #1f2430;border-radius:12px;}
     .leaflet-popup-tip{background:#0f1115;}
-
-    /* Style editor (long-press) */
-    .style-editor{
-      position:fixed; z-index:1200; display:none; min-width:220px; max-width:260px;
-      background:#0f1115; color:#e5e7eb; border:1px solid #1f2430; border-radius:12px; padding:12px;
-      box-shadow:0 12px 32px rgba(0,0,0,.45);
-    }
-    .style-editor h4{margin:0 0 8px 0; font-size:14px;}
-    .style-row{display:grid; grid-template-columns:auto 1fr; gap:8px; align-items:center; margin:8px 0;}
-    .style-row input[type="color"], .style-row input[type="number"], .style-row input[type="range"]{
-      width:100%; background:#12151b; border:1px solid #1f2430; color:#e5e7eb; border-radius:8px; padding:6px 8px;
-    }
-    .style-actions{display:flex; gap:8px; justify-content:flex-end; margin-top:6px;}
+    .style-editor{position:fixed;z-index:1200;display:none;min-width:220px;max-width:260px;background:#0f1115;color:#e5e7eb;border:1px solid #1f2430;border-radius:12px;padding:12px;box-shadow:0 12px 32px rgba(0,0,0,.45);}
+    .style-editor h4{margin:0 0 8px 0;font-size:14px;}
+    .style-row{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:center;margin:8px 0;}
+    .style-row input[type="color"],.style-row input[type="number"],.style-row input[type="range"]{width:100%;background:#12151b;border:1px solid #1f2430;color:#e5e7eb;border-radius:8px;padding:6px 8px;}
+    .style-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:6px;}
     .style-actions .btn{padding:6px 10px;}
   </style>
 </head>
@@ -167,7 +157,7 @@ let engine='gl';
 function showGL(){ const c=mapleaf.getCenter(), z=mapleaf.getZoom(); document.getElementById('mapleaf').style.display='none'; document.getElementById('mapgl').style.display='block'; mapgl.resize(); mapgl.jumpTo({center:[c.lng,c.lat], zoom:z}); engine='gl'; }
 function showLeaf(){ const c=mapgl.getCenter(), z=mapgl.getZoom(); document.getElementById('mapgl').style.display='none'; document.getElementById('mapleaf').style.display='block'; mapleaf.invalidateSize(true); mapleaf.setView([c.lat,c.lng], Math.round(z)); engine='leaf'; }
 
-/* ================= Icon registry for MapLibre ================= */
+/* ================= Icon registry ================= */
 const DOLLAR_ICON_NAME='dollar-pin'; let iconSeq=1;
 const urlToName=new Map(), nameToUrl=new Map();
 function dollarSvg(size){const s=size||64; return `<svg xmlns="http://www.w3.org/2000/svg" width="${s}" height="${s}" viewBox="0 0 32 32"><circle cx="16" cy="16" r="13" fill="#111" stroke="white" stroke-width="1.5"/><text x="16" y="21" text-anchor="middle" font-family="system-ui,Segoe UI,Arial" font-size="16" font-weight="800" fill="white">$</text></svg>`;}
@@ -197,17 +187,56 @@ function defaultLabelFrom(n){ if(!n) return '•'; const c=(n.trim()[0]||'•').
 function escapeHtml(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function sanitizeHtml(input){ try{ const parser=new DOMParser(); const doc=parser.parseFromString('<div>'+input+'</div>','text/html'); const allowedTags={A:1,B:1,I:1,EM:1,STRONG:1,P:1,BR:1,UL:1,OL:1,LI:1,IMG:1,DIV:1,SPAN:1}; const allowedAttrs={A:['href','title'], IMG:['src','alt','width','height','loading']}; (function clean(n){ for(const el of [...n.childNodes]){ if(el.nodeType===1){ if(!allowedTags[el.tagName]){ while(el.firstChild) n.insertBefore(el.firstChild,el); n.removeChild(el); continue; } for(const a of [...el.attributes]){ const ok=(allowedAttrs[el.tagName]||[]); if(!ok.includes(a.name.toLowerCase())) el.removeAttribute(a.name); } if(el.tagName==='A'){ const href=el.getAttribute('href')||''; el.setAttribute('target','_blank'); el.setAttribute('rel','noopener'); if(/^javascript:/i.test(href)) el.removeAttribute('href'); } if(el.tagName==='IMG'){ el.setAttribute('loading','lazy'); } clean(el); } } })(doc.body); return doc.body.firstChild.innerHTML; }catch(e){ return ''; } }
 function findYouTubeId(str){ if(!str) return ''; const m=String(str).match(/(?:youtube\.com\/watch\?[^#\s]*v=|youtu\.be\/|youtube\.com\/embed\/)([A-Za-z0-9_-]{11})/); return m?m[1]:''; }
-function buildYouTubeEmbed(id){ if(!id) return ''; const src='https://www.youtube-nocookie.com/embed/'+id+'?rel=0&modestbranding=1&playsinline=1'; return '<div class="yt-portrait"><iframe src="'+src+'" title="YouTube" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>'; }
-function buildPopupHTMLFromProps(props){ const name=props.name||'Feature'; const raw=props.description||''; const looksHtml=/<\/?[a-z][\s\S]*>/i.test(raw); let safe=looksHtml?sanitizeHtml(raw):escapeHtml(raw).replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener">$1</a>'); const tmp=document.createElement('div'); tmp.innerHTML=safe; tmp.querySelectorAll('img').forEach(img=>img.remove()); safe=tmp.innerHTML; const id=findYouTubeId(raw)||findYouTubeId(tmp.textContent||''); const embed=buildYouTubeEmbed(id); return '<div style="min-width:260px;max-width:340px;"><div style="font-weight:800;font-size:16px;margin-bottom:6px;">'+escapeHtml(name)+'</div>'+(embed||'')+(safe?'<div style="font-size:13px;line-height:1.35;color:#cbd5e1;">'+safe+'</div>':'')+'</div>'; }
+function buildYouTubeEmbed(id){
+  if(!id) return '';
+  const src='https://www.youtube-nocookie.com/embed/'+id+'?rel=0&modestbranding=1&playsinline=1';
+  return '<div class="yt-portrait" style="text-align:center"><iframe src="'+src+'" title="YouTube" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>';
+}
+function buildPopupHTMLFromProps(props){
+  const name=props.name||'Feature';
+  const raw=props.description||'';
+  const looksHtml=/<\/?[a-z][\s\S]*>/i.test(raw);
+  let safe=looksHtml?sanitizeHtml(raw):escapeHtml(raw).replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener">$1</a>');
+  const tmp=document.createElement('div'); tmp.innerHTML=safe; tmp.querySelectorAll('img').forEach(img=>img.remove()); safe=tmp.innerHTML;
+  const id=findYouTubeId(raw)||findYouTubeId(tmp.textContent||'');
+  const embed=buildYouTubeEmbed(id);
+  return '<div style="min-width:260px;max-width:340px;">'
+       + '<div style="font-weight:800;font-size:16px;margin-bottom:6px;text-align:center;">'+escapeHtml(name)+'</div>'
+       + (embed || '')
+       + (safe ? '<div style="font-size:13px;line-height:1.35;color:#cbd5e1;font-weight:700;">'+safe+'</div>' : '') /* bold description */
+       + '</div>';
+}
 function bboxOfFeature(f){ let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity; (function scan(c){ if(typeof c[0]==='number'){ const [x,y]=c; minX=Math.min(minX,x); minY=Math.min(minY,y); maxX=Math.max(maxX,x); maxY=Math.max(maxY,y);} else c.forEach(scan); })(f.geometry.coordinates); return [[minX,minY],[maxX,maxY]]; }
 function panPopupIntoViewGL(lngLat,liftPx=180){ const p=mapgl.project(lngLat); p.y-=liftPx; const center=mapgl.unproject(p); mapgl.easeTo({center,duration:350}); }
 
-/* ================= KMZ helpers ================= */
-async function buildKmzAssetMap(zip){ const out={}; for(const f of Object.values(zip.files)){ if(!f.dir && /\.(png|jpe?g|gif|svg)$/i.test(f.name)){ out[f.name]=URL.createObjectURL(await f.async('blob')); } } return out; }
-function resolveIconHref(href,opts){ if(!href) return ''; if(/^(https?:|data:|blob:)/i.test(href)) return href; if(opts && opts.assetMap){ if(opts.assetMap[href]) return opts.assetMap[href]; const base=href.split(/[\\/]/).pop(); for(const k of Object.keys(opts.assetMap)){ if(k===base || k.endsWith('/'+base)) return opts.assetMap[k]; } } if(opts && opts.baseUrl){ try{return new URL(href,opts.baseUrl).href;}catch(e){} } return href; }
+/* ========== KMZ helpers: PERSISTENT DATA URLS ========== */
+function blobToDataUrl(blob){ return new Promise(res=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.readAsDataURL(blob); }); }
+async function buildKmzAssetMap(zip){
+  const out={};
+  for(const f of Object.values(zip.files)){
+    if(!f.dir && /\.(png|jpe?g|gif|svg)$/i.test(f.name)){
+      const blob=await f.async('blob');
+      out[f.name] = await blobToDataUrl(blob); // persistent data: URL
+    }
+  }
+  return out;
+}
+function resolveIconHref(href,opts){
+  if(!href) return '';
+  if(/^(https?:|data:)/i.test(href)) return href;
+  if(opts && opts.assetMap){
+    if(opts.assetMap[href]) return opts.assetMap[href];
+    const base=href.split(/[\\/]/).pop();
+    for(const k of Object.keys(opts.assetMap)){
+      if(k===base || k.endsWith('/'+base)) return opts.assetMap[k];
+    }
+  }
+  if(opts && opts.baseUrl){ try{return new URL(href,opts.baseUrl).href;}catch(e){} }
+  return href;
+}
 function extractKmlMeta(xmlDoc,opts){ function t(n,sel){ const el=n.querySelector(sel); return el ? (el.textContent||'').trim():''; } const styleById={},smById={}; xmlDoc.querySelectorAll('Style[id], style[id]').forEach(s=>styleById[s.getAttribute('id')]=s); xmlDoc.querySelectorAll('StyleMap[id], styleMap[id]').forEach(s=>smById[s.getAttribute('id')]=s); function resolveStyleUrl(url){ if(!url) return null; const id=url.replace(/^#/,''); const sm=smById[id]; if(sm){ for(const p of sm.querySelectorAll('Pair')) if((t(p,'key')||'').toLowerCase()==='normal'){ const su=t(p,'styleUrl'); if(su) return resolveStyleUrl(su); } } return styleById[id]||null; } function topFolderName(node){ let cur=node.parentNode,top=''; while(cur&&cur.nodeType===1){ if(/Folder/i.test(cur.tagName)){ const nm=t(cur,'name'); if(nm) top=nm; } cur=cur.parentNode; } return top||'Untitled layer'; } function parseStyle(sEl){ if(!sEl) return {}; const iconHref=t(sEl,'IconStyle Icon href')||t(sEl,'iconStyle icon href'); const lineColor=t(sEl,'LineStyle color')||t(sEl,'lineStyle color'); const lineWidth=t(sEl,'LineStyle width')||t(sEl,'lineStyle width'); const polyColor=t(sEl,'PolyStyle color')||t(sEl,'polyStyle color'); return {iconHref:resolveIconHref(iconHref,opts),lineColor,lineWidth,polyColor}; } const metas=[]; xmlDoc.querySelectorAll('Placemark, placemark').forEach(pm=>{ const sEl=resolveStyleUrl(t(pm,'styleUrl')); metas.push({name:t(pm,'name'), topFolder:topFolderName(pm), style:parseStyle(sEl)}); }); return metas; }
 
-/* ================= MapLibre overlay (hover highlight, promoteId) ================= */
+/* ================= MapLibre overlay ================= */
 function createGroupOnGL(entry, clearIfExists){
   glReady(async ()=>{
     await ensureAllIconsOnCurrentStyle();
@@ -227,26 +256,15 @@ function createGroupOnGL(entry, clearIfExists){
 
     mapgl.addLayer({ id:fillId, type:'fill', source:srcId,
       filter:['all',notHidden,['in',['geometry-type'],['literal',['Polygon','MultiPolygon']]]],
-      paint:{
-        'fill-color':['coalesce',['get','_fill'],'#0b57d0'],
-        'fill-opacity':['case',['boolean',['feature-state','hover'],false], ['min',1,['+',0.2,['get','_fillOpacity']]], ['coalesce',['get','_fillOpacity'],0.2] ]
-      } });
+      paint:{ 'fill-color':['coalesce',['get','_fill'],'#0b57d0'], 'fill-opacity':['coalesce',['get','_fillOpacity'],0.2] } });
 
     mapgl.addLayer({ id:polyEdgeId, type:'line', source:srcId,
       filter:['all',notHidden,['in',['geometry-type'],['literal',['Polygon','MultiPolygon']]]],
-      paint:{
-        'line-color':['coalesce',['get','_stroke'],'#0b57d0'],
-        'line-width':['case',['boolean',['feature-state','hover'],false], ['+',1,['coalesce',['get','_weight'],2]], ['coalesce',['get','_weight'],2] ],
-        'line-opacity':['coalesce',['get','_strokeOpacity'],0.9]
-      } });
+      paint:{ 'line-color':['coalesce',['get','_stroke'],'#0b57d0'], 'line-width':['coalesce',['get','_weight'],2], 'line-opacity':['coalesce',['get','_strokeOpacity'],0.9] } });
 
     mapgl.addLayer({ id:lineId, type:'line', source:srcId,
       filter:['all',notHidden,['in',['geometry-type'],['literal',['LineString','MultiLineString']]]],
-      paint:{
-        'line-color':['coalesce',['get','_stroke'],'#0b57d0'],
-        'line-width':['case',['boolean',['feature-state','hover'],false], ['+',1,['coalesce',['get','_weight'],2]], ['coalesce',['get','_weight'],2] ],
-        'line-opacity':['coalesce',['get','_strokeOpacity'],0.9]
-      } });
+      paint:{ 'line-color':['coalesce',['get','_stroke'],'#0b57d0'], 'line-width':['coalesce',['get','_weight'],2], 'line-opacity':['coalesce',['get','_strokeOpacity'],0.9] } });
 
     mapgl.addLayer({ id:iconId, type:'symbol', source:srcId,
       filter:['all',notHidden,['==',['geometry-type'],'Point']],
@@ -264,18 +282,6 @@ function createGroupOnGL(entry, clearIfExists){
         new maptilersdk.Popup({ anchor:'bottom', offset:[0,POP], maxWidth:'340px', closeOnClick:true })
           .setLngLat(e.lngLat).setHTML(buildPopupHTMLFromProps((e.features[0]&&e.features[0].properties)||{})).addTo(mapgl);
       });
-      // hover highlight using feature-state
-      let hoveredId=null;
-      mapgl.on('mousemove', lid, (e)=>{
-        const f=e.features && e.features[0]; if(!f) return;
-        if(hoveredId!==null) mapgl.setFeatureState({source:srcId,id:hoveredId}, {hover:false});
-        hoveredId=f.id; mapgl.setFeatureState({source:srcId,id:hoveredId},{hover:true});
-        mapgl.getCanvas().style.cursor='pointer';
-      });
-      mapgl.on('mouseleave', lid, ()=>{
-        mapgl.getCanvas().style.cursor='';
-        mapgl.setFeatureState({source:srcId,id:null},{hover:false});
-      });
     });
 
     attachLongPressGL(fillId, entry);
@@ -284,7 +290,7 @@ function createGroupOnGL(entry, clearIfExists){
 }
 function refreshGroupGL(entry){ const src=mapgl.getSource(entry.glSourceId); if(src) src.setData(entry.data); }
 
-/* ================= Leaflet overlay (hover bump) ================= */
+/* ================= Leaflet overlay ================= */
 function dollarDataUrl(size=32){ return 'data:image/svg+xml;charset=UTF-8,'+encodeURIComponent(dollarSvg(size)); }
 function leafletIconFor(url,size=32){ return L.icon({iconUrl:url||dollarDataUrl(size),iconSize:[size,size],iconAnchor:[size/2,size-2],popupAnchor:[0,-size/2]}); }
 function createGroupOnLeaflet(entry,rebuild=false){
@@ -301,13 +307,11 @@ function createGroupOnLeaflet(entry,rebuild=false){
     if(f.geometry.type==='Point'){
       const [lng,lat]=f.geometry.coordinates;
       const icon=leafletIconFor(f.properties._iconUrl || nameToUrl.get(f.properties._icon),32);
-      const m=L.marker([lat,lng],{icon}).bindPopup(buildPopupHTMLFromProps(f.properties),{autoPan:true,offset:[0,-18]}).on('click',()=>m.openPopup());
+      const m=L.marker([lat,lng],{icon}).bindPopup(buildPopupHTMLFromProps(f.properties),{autoPan:true,offset:[0,-18]});
       if(!f.properties.hidden) m.addTo(entry.lfGroup); list.push(m);
     }else{
       const gj=L.geoJSON(f,{ style: geom=> (geom.type.includes('Polygon')?polyStyle:lineStyle) })
-          .bindPopup(buildPopupHTMLFromProps(f.properties),{autoPan:true,offset:[0,-18]});
-      gj.on('mouseover', e=>{ try{ e.target.setStyle({weight:(f.properties._weight||2)+1}); }catch{} });
-      gj.on('mouseout',  e=>{ try{ e.target.setStyle({weight:(f.properties._weight||2)}); }catch{} });
+        .bindPopup(buildPopupHTMLFromProps(f.properties),{autoPan:true,offset:[0,-18]});
       if(!f.properties.hidden) gj.addTo(entry.lfGroup);
       list.push(gj);
       gj.on('mousedown', (ev)=> attachLongPressLeaf(ev, entry, fid));
@@ -321,7 +325,7 @@ function refreshGroupBoth(entry){
   if(entry.lfGroup){ try{ entry.lfGroup.clearLayers(); }catch{} createGroupOnLeaflet(entry, true); }
 }
 
-/* ================= UI: groups & layers ================= */
+/* ================= UI ================= */
 function renderGroupsVisibility(){
   const host=byId('grp-list'); host.innerHTML='';
   if(!layerList.length){ host.innerHTML='<div class="hint">No groups yet.</div>'; return; }
@@ -350,9 +354,7 @@ function renderLayers(){
     const renameBtn=document.createElement('button'); renameBtn.className='btn small'; renameBtn.textContent='Rename';
     renameBtn.onclick=()=>{ const nn=prompt('New layer name:', entry.name); if(!nn) return; entry.name=nn; renderGroupsVisibility(); renderLayers(); saveState(); };
     const delBtn=document.createElement('button'); delBtn.className='btn small'; delBtn.textContent='Delete';
-    delBtn.onclick=()=>{ if(!confirm('Delete this layer?')) return; // remove GL
-      (entry.glLayerIds||[]).forEach(id=>{ if(mapgl.getLayer(id)) try{mapgl.removeLayer(id);}catch{} }); if(entry.glSourceId && mapgl.getSource(entry.glSourceId)) try{mapgl.removeSource(entry.glSourceId);}catch{}; // remove Leaflet
-      if(entry.lfGroup) try{entry.lfGroup.remove();}catch{}; const ix=layerList.findIndex(l=>l.id===entry.id); if(ix>=0) layerList.splice(ix,1); renderGroupsVisibility(); renderLayers(); saveState(); };
+    delBtn.onclick=()=>{ if(!confirm('Delete this layer?')) return; (entry.glLayerIds||[]).forEach(id=>{ if(mapgl.getLayer(id)) try{mapgl.removeLayer(id);}catch{} }); if(entry.glSourceId && mapgl.getSource(entry.glSourceId)) try{mapgl.removeSource(entry.glSourceId);}catch{}; if(entry.lfGroup) try{entry.lfGroup.remove();}catch{}; const ix=layerList.findIndex(l=>l.id===entry.id); if(ix>=0) layerList.splice(ix,1); renderGroupsVisibility(); renderLayers(); saveState(); };
     actions.append(renameBtn, delBtn);
 
     head.append(vis, ttl, actions); wrap.appendChild(head);
@@ -426,7 +428,7 @@ function addKmlText(text,filename,opts,forceGroupName){
   renderLayers(); renderGroupsVisibility(); saveState();
 }
 
-/* ================= Upload/Drop/URL buttons ================= */
+/* ========= Upload/Drop/URL ========= */
 byId('upload-btn').onclick=()=>byId('upload-input').click();
 byId('upload-input').addEventListener('change', ev=>{
   const files=[...(ev.target.files||[])];
@@ -469,11 +471,11 @@ document.getElementById('basemap').addEventListener('change', (e)=>{
   closeStyleEditor();
 });
 
-/* ===== Preload KMZ on open ===== */
-const PRELOAD_KMZ_CANDIDATES=['All Coin Records 2023-2024.kmz','All Coins Record 2023-2024.kmz','All Coins Records 2023-2024.kmz'];
-window.addEventListener('DOMContentLoaded', async ()=>{ restoreState(); for (const name of PRELOAD_KMZ_CANDIDATES){ if(layerList.length) break; try{ await loadKMZFromUrl(encodeURI(name)); console.log('Preloaded',name); break; }catch(e){ console.warn('Preload failed for',name); } }});
+/* ===== Preload sequence + Restore ===== */
+const PRELOAD_GEOHASHES = 'geohashesGold.kmz';
+const PRELOAD_COINS = ['All Coin Records 2023-2024.kmz','All Coins Record 2023-2024.kmz','All Coins Records 2023-2024.kmz'];
 
-/* ================= Long-press style editor ================= */
+/* ===== Long-press style editor ===== */
 const editorEl=byId('style-editor');
 const seFill=byId('se-fill'), seFillOp=byId('se-fillop'), seOutline=byId('se-outline'), seStroke=byId('se-stroke'), seWidth=byId('se-width'), seClose=byId('se-close');
 let editCtx=null;
@@ -529,52 +531,78 @@ function attachLongPressLeaf(ev, entry, fid){
 }
 document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeStyleEditor(); });
 
-/* ================= Autosave (localStorage) ================= */
+/* ================= Autosave / Restore ================= */
 const LS_KEY='sqkii-mapper-state-v1';
-function shallowSerializableState(){
-  return layerList.map(l=>({ id:l.id, name:l.name, visible:l.visible!==false, data:l.data, items:l.items }));
-}
+function shallowSerializableState(){ return layerList.map(l=>({ id:l.id, name:l.name, visible:l.visible!==false, data:l.data, items:l.items })); }
 function saveState(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(shallowSerializableState())); }catch(e){ console.warn('Autosave failed',e); } }
-function restoreState(){
+window.addEventListener('beforeunload', saveState);
+
+async function rebindFeatureIcons(entry){
+  for (const f of (entry.data?.features || [])) {
+    const p = f.properties || {};
+    if (p._iconUrl) {
+      const id = registerIconUrl(p._iconUrl);
+      if (id) p._icon = id;
+    } else if (p._icon == null) {
+      p._icon = DOLLAR_ICON_NAME;
+    }
+  }
+}
+
+async function restoreState(){
   try{
-    const raw=localStorage.getItem(LS_KEY); if(!raw) return;
-    const arr=JSON.parse(raw); if(!Array.isArray(arr)) return;
-    arr.forEach(saved=>{
-      const entry={ id:saved.id||layerSeq++, name:saved.name||'Layer', visible:saved.visible!==false, data:saved.data, items:saved.items||[], glSourceId:null, glLayerIds:[], lfGroup:null, lfLayers:null };
+    const raw=localStorage.getItem(LS_KEY); if(!raw) return false;
+    const arr=JSON.parse(raw); if(!Array.isArray(arr)) return false;
+
+    await ensureAllIconsOnCurrentStyle();
+
+    for (const saved of arr){
+      const entry={ id:saved.id ?? layerSeq++, name:saved.name ?? 'Layer', visible:saved.visible!==false, data:saved.data, items:saved.items||[], glSourceId:null, glLayerIds:[], lfGroup:null, lfLayers:null };
+
+      await rebindFeatureIcons(entry);
+
       layerList.push(entry);
       if(mapgl.isStyleLoaded && mapgl.isStyleLoaded()) createGroupOnGL(entry); else mapgl.once('load',()=>createGroupOnGL(entry));
       createGroupOnLeaflet(entry);
-    });
-    // keep sequence counters above restored ids
-    layerSeq = Math.max(layerSeq, ...layerList.map(l=>l.id))+1;
-    featureSeq = Math.max(1, ...layerList.flatMap(l=>l.data.features.map(f=>f.properties.fid||0)))+1;
+
+      if (entry.visible === false){
+        (entry.glLayerIds||[]).forEach(lid=>{ if(mapgl.getLayer(lid)) mapgl.setLayoutProperty(lid,'visibility','none'); });
+        if(entry.lfGroup) mapleaf.removeLayer(entry.lfGroup);
+      }
+    }
+
+    layerSeq = Math.max(layerSeq, ...layerList.map(l=>l.id)) + 1;
+    featureSeq = Math.max(1, ...layerList.flatMap(l => (l.data?.features||[]).map(f => f.properties?.fid || 0))) + 1;
+
     renderGroupsVisibility(); renderLayers();
-  }catch(e){ console.warn('Restore failed',e); }
+    return layerList.length>0;
+  }catch(e){ console.warn('Restore failed',e); return false; }
 }
+
+/* Start: restore first; if empty, preload geohashes THEN coins (coins on top) */
+window.addEventListener('DOMContentLoaded', async ()=>{
+  const restored = await restoreState();
+  if (!restored){
+    try { await loadKMZFromUrl(encodeURI(PRELOAD_GEOHASHES), 'Geohashes'); } catch(e){ console.warn('Preload geohashes failed', e); }
+    for (const name of PRELOAD_COINS){
+      try { await loadKMZFromUrl(encodeURI(name)); console.log('Preloaded', name); break; }
+      catch(e){ console.warn('Preload failed for', name); }
+    }
+  }
+});
 
 /* ================= Export KML / KMZ ================= */
 function escapeXml(s){return String(s).replace(/[<>&'"]/g,c=>({ '<':'&lt;','>':'&gt;','&':'&amp;',"'":'&apos;','"':'&quot;' }[c]));}
-function kmlColorFromCss(hex,opacity){ // to aabbggrr
-  const h=(hex||'#0b57d0').replace('#',''); const r=parseInt(h.slice(0,2),16)||0, g=parseInt(h.slice(2,4),16)||0, b=parseInt(h.slice(4,6),16)||0;
-  const a=Math.round((opacity==null?1:opacity)*255); const to2=x=>x.toString(16).padStart(2,'0');
-  return to2(a)+to2(b)+to2(g)+to2(r);
-}
+function kmlColorFromCss(hex,opacity){ const h=(hex||'#0b57d0').replace('#',''); const r=parseInt(h.slice(0,2),16)||0, g=parseInt(h.slice(2,4),16)||0, b=parseInt(h.slice(4,6),16)||0; const a=Math.round((opacity==null?1:opacity)*255); const to2=x=>x.toString(16).padStart(2,'0'); return to2(a)+to2(b)+to2(g)+to2(r); }
 function serializePlacemark(f){
-  const p=f.properties||{}, name=escapeXml(p.name||'Feature');
-  const styleId='s'+(p.fid||'x');
+  const p=f.properties||{}, name=escapeXml(p.name||'Feature'), styleId='s'+(p.fid||'x');
   let geomStr='';
-  if(f.geometry.type==='Point'){
-    const [lng,lat]=f.geometry.coordinates;
-    geomStr=`<Point><coordinates>${lng},${lat},0</coordinates></Point>`;
-  }else if(f.geometry.type==='LineString'){
-    geomStr=`<LineString><coordinates>${f.geometry.coordinates.map(c=>c.join(',')).join(' ')}</coordinates></LineString>`;
-  }else if(f.geometry.type==='Polygon'){
+  if(f.geometry.type==='Point'){ const [lng,lat]=f.geometry.coordinates; geomStr=`<Point><coordinates>${lng},${lat},0</coordinates></Point>`; }
+  else if(f.geometry.type==='LineString'){ geomStr=`<LineString><coordinates>${f.geometry.coordinates.map(c=>c.join(',')).join(' ')}</coordinates></LineString>`; }
+  else if(f.geometry.type==='Polygon'){
     const rings=f.geometry.coordinates.map((ring,i)=>`<${i===0?'outerBoundaryIs':'innerBoundaryIs'}><LinearRing><coordinates>${ring.map(c=>c.join(',')).join(' ')}</coordinates></LinearRing></${i===0?'outerBoundaryIs':'innerBoundaryIs'}>`).join('');
     geomStr=`<Polygon>${rings}</Polygon>`;
-  }else{
-    // fallback via GeoJSON (simple)
-    return '';
-  }
+  } else return '';
   const style = `
     <Style id="${styleId}">
       <IconStyle>${p._iconUrl?`<Icon><href>${escapeXml(p._iconUrl)}</href></Icon>`:''}</IconStyle>
@@ -583,15 +611,8 @@ function serializePlacemark(f){
     </Style>`;
   return style + `<Placemark><name>${name}</name><styleUrl>#${styleId}</styleUrl>${geomStr}${p.description?`<description><![CDATA[${p.description}]]></description>`:''}</Placemark>`;
 }
-function exportKMLString(){
-  const body = layerList.map(l=>{
-    const folder = `<Folder><name>${escapeXml(l.name)}</name>${l.data.features.filter(f=>!f.properties.hidden).map(serializePlacemark).join('')}</Folder>`;
-    return folder;
-  }).join('');
-  return `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>${body}</Document></kml>`;
-}
+function exportKMLString(){ const body=layerList.map(l=>`<Folder><name>${escapeXml(l.name)}</name>${l.data.features.filter(f=>!f.properties.hidden).map(serializePlacemark).join('')}</Folder>`).join(''); return `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>${body}</Document></kml>`; }
 function downloadBlob(name, blob){ const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(url), 1500); }
-
 byId('export-kml').onclick=()=>{ const kml=exportKMLString(); downloadBlob('sqkii-export.kml', new Blob([kml],{type:'application/vnd.google-earth.kml+xml'})); };
 byId('export-kmz').onclick=async()=>{ const zip=new JSZip(); const kml=exportKMLString(); zip.file('doc.kml', kml); const blob=await zip.generateAsync({type:'blob'}); downloadBlob('sqkii-export.kmz', blob); };
 </script>
