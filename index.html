@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>SQKII Mapper — MapTiler + OSM (dark)</title>
+  <title>SQKII Mapper</title>
 
   <!-- MapTiler SDK (MapLibre) -->
   <script src="https://cdn.maptiler.com/maptiler-sdk-js/v3.6.1/maptiler-sdk.umd.min.js"></script>
@@ -56,7 +56,7 @@
     details.grp>summary{list-style:none;padding:10px 12px;cursor:pointer;font-weight:700;}
     details.grp>summary::-webkit-details-marker{display:none;}
     .grp-list{padding:8px 12px;display:grid;gap:6px;max-height:220px;overflow:auto;}
-    .yt-portrait{width:240px;aspect-ratio:9/16;background:#000;border-radius:12px;overflow:hidden;margin:0 0 8px 0;}
+    .yt-portrait{width:240px;aspect-ratio:9/16;background:#000;border-radius:12px;overflow:hidden;margin:8px auto;} /* centered */
     @media (min-width:480px){ .yt-portrait{ width:260px; } }
     .yt-portrait>iframe{width:100%;height:100%;display:block;border:0}
     .ui-hide{position:absolute;top:10px;right:10px;z-index:1001;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:6px 10px;font-weight:700;cursor:pointer;box-shadow:0 2px 14px rgba(0,0,0,.35);color:var(--text);}
@@ -187,8 +187,25 @@ function defaultLabelFrom(n){ if(!n) return '•'; const c=(n.trim()[0]||'•').
 function escapeHtml(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function sanitizeHtml(input){ try{ const parser=new DOMParser(); const doc=parser.parseFromString('<div>'+input+'</div>','text/html'); const allowedTags={A:1,B:1,I:1,EM:1,STRONG:1,P:1,BR:1,UL:1,OL:1,LI:1,IMG:1,DIV:1,SPAN:1}; const allowedAttrs={A:['href','title'], IMG:['src','alt','width','height','loading']}; (function clean(n){ for(const el of [...n.childNodes]){ if(el.nodeType===1){ if(!allowedTags[el.tagName]){ while(el.firstChild) n.insertBefore(el.firstChild,el); n.removeChild(el); continue; } for(const a of [...el.attributes]){ const ok=(allowedAttrs[el.tagName]||[]); if(!ok.includes(a.name.toLowerCase())) el.removeAttribute(a.name); } if(el.tagName==='A'){ const href=el.getAttribute('href')||''; el.setAttribute('target','_blank'); el.setAttribute('rel','noopener'); if(/^javascript:/i.test(href)) el.removeAttribute('href'); } if(el.tagName==='IMG'){ el.setAttribute('loading','lazy'); } clean(el); } } })(doc.body); return doc.body.firstChild.innerHTML; }catch(e){ return ''; } }
 function findYouTubeId(str){ if(!str) return ''; const m=String(str).match(/(?:youtube\.com\/watch\?[^#\s]*v=|youtu\.be\/|youtube\.com\/embed\/)([A-Za-z0-9_-]{11})/); return m?m[1]:''; }
-function buildYouTubeEmbed(id){ if(!id) return ''; const src='https://www.youtube-nocookie.com/embed/'+id+'?rel=0&modestbranding=1&playsinline=1'; return '<div class="yt-portrait"><iframe src="'+src+'" title="YouTube" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>'; }
-function buildPopupHTMLFromProps(props){ const name=props.name||'Feature'; const raw=props.description||''; const looksHtml=/<\/?[a-z][\s\S]*>/i.test(raw); let safe=looksHtml?sanitizeHtml(raw):escapeHtml(raw).replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener">$1</a>'); const tmp=document.createElement('div'); tmp.innerHTML=safe; tmp.querySelectorAll('img').forEach(img=>img.remove()); safe=tmp.innerHTML; const id=findYouTubeId(raw)||findYouTubeId(tmp.textContent||''); const embed=buildYouTubeEmbed(id); return '<div style="min-width:260px;max-width:340px;"><div style="font-weight:800;font-size:16px;margin-bottom:6px;">'+escapeHtml(name)+'</div>'+(embed||'')+(safe?'<div style="font-size:13px;line-height:1.35;color:#cbd5e1;">'+safe+'</div>':'')+'</div>'; }
+function buildYouTubeEmbed(id){
+  if(!id) return '';
+  const src='https://www.youtube-nocookie.com/embed/'+id+'?rel=0&modestbranding=1&playsinline=1';
+  return '<div class="yt-portrait" style="text-align:center"><iframe src="'+src+'" title="YouTube" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>';
+}
+function buildPopupHTMLFromProps(props){
+  const name=props.name||'Feature';
+  const raw=props.description||'';
+  const looksHtml=/<\/?[a-z][\s\S]*>/i.test(raw);
+  let safe=looksHtml?sanitizeHtml(raw):escapeHtml(raw).replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener">$1</a>');
+  const tmp=document.createElement('div'); tmp.innerHTML=safe; tmp.querySelectorAll('img').forEach(img=>img.remove()); safe=tmp.innerHTML;
+  const id=findYouTubeId(raw)||findYouTubeId(tmp.textContent||'');
+  const embed=buildYouTubeEmbed(id);
+  return '<div style="min-width:260px;max-width:340px;">'
+       + '<div style="font-weight:800;font-size:16px;margin-bottom:6px;text-align:center;">'+escapeHtml(name)+'</div>'
+       + (embed || '')
+       + (safe ? '<div style="font-size:13px;line-height:1.35;color:#cbd5e1;font-weight:700;">'+safe+'</div>' : '') /* bold description */
+       + '</div>';
+}
 function bboxOfFeature(f){ let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity; (function scan(c){ if(typeof c[0]==='number'){ const [x,y]=c; minX=Math.min(minX,x); minY=Math.min(minY,y); maxX=Math.max(maxX,x); maxY=Math.max(maxY,y);} else c.forEach(scan); })(f.geometry.coordinates); return [[minX,minY],[maxX,maxY]]; }
 function panPopupIntoViewGL(lngLat,liftPx=180){ const p=mapgl.project(lngLat); p.y-=liftPx; const center=mapgl.unproject(p); mapgl.easeTo({center,duration:350}); }
 
@@ -199,16 +216,16 @@ async function buildKmzAssetMap(zip){
   for(const f of Object.values(zip.files)){
     if(!f.dir && /\.(png|jpe?g|gif|svg)$/i.test(f.name)){
       const blob=await f.async('blob');
-      out[f.name] = await blobToDataUrl(blob); // <-- persistent data: URL
+      out[f.name] = await blobToDataUrl(blob); // persistent data: URL
     }
   }
   return out;
 }
 function resolveIconHref(href,opts){
   if(!href) return '';
-  if(/^(https?:|data:)/i.test(href)) return href; // keep http(s) / data urls
+  if(/^(https?:|data:)/i.test(href)) return href;
   if(opts && opts.assetMap){
-    if(opts.assetMap[href]) return opts.assetMap[href]; // data: URL from KMZ
+    if(opts.assetMap[href]) return opts.assetMap[href];
     const base=href.split(/[\\/]/).pop();
     for(const k of Object.keys(opts.assetMap)){
       if(k===base || k.endsWith('/'+base)) return opts.assetMap[k];
@@ -392,7 +409,7 @@ function addKmlText(text,filename,opts,forceGroupName){
 
       let iconName=DOLLAR_ICON_NAME, iconUrl='';
       const iconHref=m.style.iconHref;
-      if(iconHref){ const name=registerIconUrl(iconHref); if(name) iconName=name; iconUrl=iconHref; } // iconHref is now persistent (data: url for KMZ)
+      if(iconHref){ const name=registerIconUrl(iconHref); if(name) iconName=name; iconUrl=iconHref; }
 
       const isPoint=f.geometry && f.geometry.type==='Point';
       const label = isPoint ? defaultLabelFrom(itemName) : '•';
@@ -454,8 +471,9 @@ document.getElementById('basemap').addEventListener('change', (e)=>{
   closeStyleEditor();
 });
 
-/* ===== Preload KMZ on open + Restore ===== */
-const PRELOAD_KMZ_CANDIDATES=['All Coin Records 2023-2024.kmz','All Coins Record 2023-2024.kmz','All Coins Records 2023-2024.kmz'];
+/* ===== Preload sequence + Restore ===== */
+const PRELOAD_GEOHASHES = 'geohashesGold.kmz';
+const PRELOAD_COINS = ['All Coin Records 2023-2024.kmz','All Coins Record 2023-2024.kmz','All Coins Records 2023-2024.kmz'];
 
 /* ===== Long-press style editor ===== */
 const editorEl=byId('style-editor');
@@ -519,7 +537,6 @@ function shallowSerializableState(){ return layerList.map(l=>({ id:l.id, name:l.
 function saveState(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(shallowSerializableState())); }catch(e){ console.warn('Autosave failed',e); } }
 window.addEventListener('beforeunload', saveState);
 
-/* Re-register icons for restored entries and update _icon to current GL image ids */
 async function rebindFeatureIcons(entry){
   for (const f of (entry.data?.features || [])) {
     const p = f.properties || {};
@@ -532,11 +549,10 @@ async function rebindFeatureIcons(entry){
   }
 }
 
-/* Restore from localStorage */
 async function restoreState(){
   try{
-    const raw=localStorage.getItem(LS_KEY); if(!raw) return;
-    const arr=JSON.parse(raw); if(!Array.isArray(arr)) return;
+    const raw=localStorage.getItem(LS_KEY); if(!raw) return false;
+    const arr=JSON.parse(raw); if(!Array.isArray(arr)) return false;
 
     await ensureAllIconsOnCurrentStyle();
 
@@ -559,14 +575,16 @@ async function restoreState(){
     featureSeq = Math.max(1, ...layerList.flatMap(l => (l.data?.features||[]).map(f => f.properties?.fid || 0))) + 1;
 
     renderGroupsVisibility(); renderLayers();
-  }catch(e){ console.warn('Restore failed',e); }
+    return layerList.length>0;
+  }catch(e){ console.warn('Restore failed',e); return false; }
 }
 
-/* Start: restore first; preload only if nothing restored */
+/* Start: restore first; if empty, preload geohashes THEN coins (coins on top) */
 window.addEventListener('DOMContentLoaded', async ()=>{
-  await restoreState();
-  if (!layerList.length){
-    for (const name of PRELOAD_KMZ_CANDIDATES){
+  const restored = await restoreState();
+  if (!restored){
+    try { await loadKMZFromUrl(encodeURI(PRELOAD_GEOHASHES), 'Geohashes'); } catch(e){ console.warn('Preload geohashes failed', e); }
+    for (const name of PRELOAD_COINS){
       try { await loadKMZFromUrl(encodeURI(name)); console.log('Preloaded', name); break; }
       catch(e){ console.warn('Preload failed for', name); }
     }
