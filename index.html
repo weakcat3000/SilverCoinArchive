@@ -274,7 +274,6 @@ function createGroupOnGL(entry, clearIfExists){
       });
       mapgl.on('mouseleave', lid, ()=>{
         mapgl.getCanvas().style.cursor='';
-        mapgl.setFeatureState({source:srcId,id:null},{hover:false});
       });
     });
 
@@ -350,9 +349,7 @@ function renderLayers(){
     const renameBtn=document.createElement('button'); renameBtn.className='btn small'; renameBtn.textContent='Rename';
     renameBtn.onclick=()=>{ const nn=prompt('New layer name:', entry.name); if(!nn) return; entry.name=nn; renderGroupsVisibility(); renderLayers(); saveState(); };
     const delBtn=document.createElement('button'); delBtn.className='btn small'; delBtn.textContent='Delete';
-    delBtn.onclick=()=>{ if(!confirm('Delete this layer?')) return; // remove GL
-      (entry.glLayerIds||[]).forEach(id=>{ if(mapgl.getLayer(id)) try{mapgl.removeLayer(id);}catch{} }); if(entry.glSourceId && mapgl.getSource(entry.glSourceId)) try{mapgl.removeSource(entry.glSourceId);}catch{}; // remove Leaflet
-      if(entry.lfGroup) try{entry.lfGroup.remove();}catch{}; const ix=layerList.findIndex(l=>l.id===entry.id); if(ix>=0) layerList.splice(ix,1); renderGroupsVisibility(); renderLayers(); saveState(); };
+    delBtn.onclick=()=>{ if(!confirm('Delete this layer?')) return; (entry.glLayerIds||[]).forEach(id=>{ if(mapgl.getLayer(id)) try{mapgl.removeLayer(id);}catch{} }); if(entry.glSourceId && mapgl.getSource(entry.glSourceId)) try{mapgl.removeSource(entry.glSourceId);}catch{}; if(entry.lfGroup) try{entry.lfGroup.remove();}catch{}; const ix=layerList.findIndex(l=>l.id===entry.id); if(ix>=0) layerList.splice(ix,1); renderGroupsVisibility(); renderLayers(); saveState(); };
     actions.append(renameBtn, delBtn);
 
     head.append(vis, ttl, actions); wrap.appendChild(head);
@@ -469,9 +466,8 @@ document.getElementById('basemap').addEventListener('change', (e)=>{
   closeStyleEditor();
 });
 
-/* ===== Preload KMZ on open ===== */
+/* ===== Preload KMZ on open + Restore ===== */
 const PRELOAD_KMZ_CANDIDATES=['All Coin Records 2023-2024.kmz','All Coins Record 2023-2024.kmz','All Coins Records 2023-2024.kmz'];
-window.addEventListener('DOMContentLoaded', async ()=>{ restoreState(); for (const name of PRELOAD_KMZ_CANDIDATES){ if(layerList.length) break; try{ await loadKMZFromUrl(encodeURI(name)); console.log('Preloaded',name); break; }catch(e){ console.warn('Preload failed for',name); } }});
 
 /* ================= Long-press style editor ================= */
 const editorEl=byId('style-editor');
@@ -535,26 +531,65 @@ function shallowSerializableState(){
   return layerList.map(l=>({ id:l.id, name:l.name, visible:l.visible!==false, data:l.data, items:l.items }));
 }
 function saveState(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(shallowSerializableState())); }catch(e){ console.warn('Autosave failed',e); } }
-function restoreState(){
+
+/* Re-register icons for restored entries and update _icon to current GL image ids */
+async function rebindFeatureIcons(entry){
+  for (const f of (entry.data?.features || [])) {
+    const p = f.properties || {};
+    if (p._iconUrl) {
+      const id = registerIconUrl(p._iconUrl);
+      if (id) p._icon = id;
+    } else if (p._icon == null) {
+      p._icon = DOLLAR_ICON_NAME;
+    }
+  }
+}
+
+/* Restore state (async so we can rebind icons before adding layers) */
+async function restoreState(){
   try{
     const raw=localStorage.getItem(LS_KEY); if(!raw) return;
     const arr=JSON.parse(raw); if(!Array.isArray(arr)) return;
-    arr.forEach(saved=>{
-      const entry={ id:saved.id||layerSeq++, name:saved.name||'Layer', visible:saved.visible!==false, data:saved.data, items:saved.items||[], glSourceId:null, glLayerIds:[], lfGroup:null, lfLayers:null };
+
+    await ensureAllIconsOnCurrentStyle();
+
+    for (const saved of arr){
+      const entry={ id:saved.id ?? layerSeq++, name:saved.name ?? 'Layer', visible:saved.visible!==false, data:saved.data, items:saved.items||[], glSourceId:null, glLayerIds:[], lfGroup:null, lfLayers:null };
+
+      await rebindFeatureIcons(entry);
+
       layerList.push(entry);
+
       if(mapgl.isStyleLoaded && mapgl.isStyleLoaded()) createGroupOnGL(entry); else mapgl.once('load',()=>createGroupOnGL(entry));
       createGroupOnLeaflet(entry);
-    });
-    // keep sequence counters above restored ids
-    layerSeq = Math.max(layerSeq, ...layerList.map(l=>l.id))+1;
-    featureSeq = Math.max(1, ...layerList.flatMap(l=>l.data.features.map(f=>f.properties.fid||0)))+1;
+
+      if (entry.visible === false){
+        (entry.glLayerIds||[]).forEach(lid=>{ if(mapgl.getLayer(lid)) mapgl.setLayoutProperty(lid,'visibility','none'); });
+        if(entry.lfGroup) mapleaf.removeLayer(entry.lfGroup);
+      }
+    }
+
+    layerSeq = Math.max(layerSeq, ...layerList.map(l=>l.id)) + 1;
+    featureSeq = Math.max(1, ...layerList.flatMap(l => (l.data?.features||[]).map(f => f.properties?.fid || 0))) + 1;
+
     renderGroupsVisibility(); renderLayers();
   }catch(e){ console.warn('Restore failed',e); }
 }
 
+/* ===== DOMContentLoaded: restore then (optionally) preload ===== */
+window.addEventListener('DOMContentLoaded', async ()=>{
+  await restoreState();
+  if (!layerList.length){
+    for (const name of PRELOAD_KMZ_CANDIDATES){
+      try { await loadKMZFromUrl(encodeURI(name)); console.log('Preloaded', name); break; }
+      catch(e){ console.warn('Preload failed for', name); }
+    }
+  }
+});
+
 /* ================= Export KML / KMZ ================= */
 function escapeXml(s){return String(s).replace(/[<>&'"]/g,c=>({ '<':'&lt;','>':'&gt;','&':'&amp;',"'":'&apos;','"':'&quot;' }[c]));}
-function kmlColorFromCss(hex,opacity){ // to aabbggrr
+function kmlColorFromCss(hex,opacity){
   const h=(hex||'#0b57d0').replace('#',''); const r=parseInt(h.slice(0,2),16)||0, g=parseInt(h.slice(2,4),16)||0, b=parseInt(h.slice(4,6),16)||0;
   const a=Math.round((opacity==null?1:opacity)*255); const to2=x=>x.toString(16).padStart(2,'0');
   return to2(a)+to2(b)+to2(g)+to2(r);
@@ -572,7 +607,6 @@ function serializePlacemark(f){
     const rings=f.geometry.coordinates.map((ring,i)=>`<${i===0?'outerBoundaryIs':'innerBoundaryIs'}><LinearRing><coordinates>${ring.map(c=>c.join(',')).join(' ')}</coordinates></LinearRing></${i===0?'outerBoundaryIs':'innerBoundaryIs'}>`).join('');
     geomStr=`<Polygon>${rings}</Polygon>`;
   }else{
-    // fallback via GeoJSON (simple)
     return '';
   }
   const style = `
