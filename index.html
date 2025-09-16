@@ -17,6 +17,9 @@
   <script src="https://unpkg.com/@tmcw/togeojson@4.7.0/dist/togeojson.umd.js"></script>
   <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
 
+  <!-- Supabase JS (UMD) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.5/dist/umd/supabase.min.js"></script>
+
   <style>
     :root{
       --panel:#0f1115; --panel-2:#12151b; --muted:#98a2b3; --text:#e5e7eb;
@@ -56,7 +59,7 @@
     details.grp>summary{list-style:none;padding:10px 12px;cursor:pointer;font-weight:700;}
     details.grp>summary::-webkit-details-marker{display:none;}
     .grp-list{padding:8px 12px;display:grid;gap:6px;max-height:220px;overflow:auto;}
-    .yt-portrait{width:240px;aspect-ratio:9/16;background:#000;border-radius:12px;overflow:hidden;margin:8px auto;} /* centered */
+    .yt-portrait{width:240px;aspect-ratio:9/16;background:#000;border-radius:12px;overflow:hidden;margin:8px auto;}
     @media (min-width:480px){ .yt-portrait{ width:260px; } }
     .yt-portrait>iframe{width:100%;height:100%;display:block;border:0}
     .ui-hide{position:absolute;top:10px;right:10px;z-index:1001;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:6px 10px;font-weight:700;cursor:pointer;box-shadow:0 2px 14px rgba(0,0,0,.35);color:var(--text);}
@@ -71,6 +74,19 @@
     .style-row input[type="color"],.style-row input[type="number"],.style-row input[type="range"]{width:100%;background:#12151b;border:1px solid #1f2430;color:#e5e7eb;border-radius:8px;padding:6px 8px;}
     .style-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:6px;}
     .style-actions .btn{padding:6px 10px;}
+
+    /* ---- Server Code Modal ---- */
+    .modal{
+      position:fixed;inset:0;background:rgba(0,0,0,.5);display:grid;place-items:center;z-index:2000;
+    }
+    .modal-card{
+      background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:16px;max-width:360px;width:92%;
+      box-shadow:0 12px 40px rgba(0,0,0,.5);
+    }
+    .modal-card h3{margin:0 0 8px 0;font-size:16px}
+    .modal-row{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:8px}
+    .modal small{color:var(--muted)}
+    .modal .err{color:#f87171;font-weight:700;margin-top:6px;display:none}
   </style>
 </head>
 <body>
@@ -110,7 +126,7 @@
         <div></div>
       </div>
 
-      <div class="hint" style="margin-top:6px;">Dark UI · autosaves to your browser</div>
+      <div class="hint" style="margin-top:6px;">Dark UI · autosaves to your browser · realtime sync via server code</div>
     </div>
 
     <div class="dropzone" id="dz">
@@ -139,6 +155,20 @@
     <div class="style-row"><label>Stroke</label><input id="se-stroke" type="color" value="#0b57d0"></div>
     <div class="style-row"><label>Width</label><input id="se-width" type="number" min="0" max="20" step="0.5" value="2"></div>
     <div class="style-actions"><button class="btn small" id="se-close">Close</button></div>
+  </div>
+</div>
+
+<!-- ===== Server Code Modal ===== -->
+<div id="server-modal" class="modal" style="display:grid">
+  <div class="modal-card">
+    <h3>Join a server</h3>
+    <small>Enter your shared <strong>Server Code</strong> to sync with others.</small>
+    <div class="modal-row">
+      <input id="server-code-input" placeholder="e.g. gold-team" />
+      <button id="server-code-join" class="btn small">Join</button>
+    </div>
+    <small>New code? We'll create it automatically.</small>
+    <div id="server-error" class="err"></div>
   </div>
 </div>
 
@@ -203,7 +233,7 @@ function buildPopupHTMLFromProps(props){
   return '<div style="min-width:260px;max-width:340px;">'
        + '<div style="font-weight:800;font-size:16px;margin-bottom:6px;text-align:center;">'+escapeHtml(name)+'</div>'
        + (embed || '')
-       + (safe ? '<div style="font-size:13px;line-height:1.35;color:#cbd5e1;font-weight:700;">'+safe+'</div>' : '') /* bold description */
+       + (safe ? '<div style="font-size:13px;line-height:1.35;color:#cbd5e1;font-weight:700;">'+safe+'</div>' : '')
        + '</div>';
 }
 function bboxOfFeature(f){ let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity; (function scan(c){ if(typeof c[0]==='number'){ const [x,y]=c; minX=Math.min(minX,x); minY=Math.min(minY,y); maxX=Math.max(maxX,x); maxY=Math.max(maxY,y);} else c.forEach(scan); })(f.geometry.coordinates); return [[minX,minY],[maxX,maxY]]; }
@@ -216,7 +246,7 @@ async function buildKmzAssetMap(zip){
   for(const f of Object.values(zip.files)){
     if(!f.dir && /\.(png|jpe?g|gif|svg)$/i.test(f.name)){
       const blob=await f.async('blob');
-      out[f.name] = await blobToDataUrl(blob); // persistent data: URL
+      out[f.name] = await blobToDataUrl(blob);
     }
   }
   return out;
@@ -531,12 +561,14 @@ function attachLongPressLeaf(ev, entry, fid){
 }
 document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeStyleEditor(); });
 
-/* ================= Autosave / Restore ================= */
+/* ================= Autosave / Restore (local) ================= */
 const LS_KEY='sqkii-mapper-state-v1';
 function shallowSerializableState(){ return layerList.map(l=>({ id:l.id, name:l.name, visible:l.visible!==false, data:l.data, items:l.items })); }
-function saveState(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(shallowSerializableState())); }catch(e){ console.warn('Autosave failed',e); } }
-window.addEventListener('beforeunload', saveState);
+/* IMPORTANT: saveState is overridden below to also sync to Supabase */
+function localSaveOnly(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(shallowSerializableState())); }catch(e){ console.warn('Autosave failed',e); } }
+window.addEventListener('beforeunload', localSaveOnly);
 
+/* Helper to ensure feature icons after loading external state */
 async function rebindFeatureIcons(entry){
   for (const f of (entry.data?.features || [])) {
     const p = f.properties || {};
@@ -549,48 +581,170 @@ async function rebindFeatureIcons(entry){
   }
 }
 
-async function restoreState(){
-  try{
-    const raw=localStorage.getItem(LS_KEY); if(!raw) return false;
-    const arr=JSON.parse(raw); if(!Array.isArray(arr)) return false;
-
-    await ensureAllIconsOnCurrentStyle();
-
-    for (const saved of arr){
-      const entry={ id:saved.id ?? layerSeq++, name:saved.name ?? 'Layer', visible:saved.visible!==false, data:saved.data, items:saved.items||[], glSourceId:null, glLayerIds:[], lfGroup:null, lfLayers:null };
-
-      await rebindFeatureIcons(entry);
-
-      layerList.push(entry);
-      if(mapgl.isStyleLoaded && mapgl.isStyleLoaded()) createGroupOnGL(entry); else mapgl.once('load',()=>createGroupOnGL(entry));
-      createGroupOnLeaflet(entry);
-
-      if (entry.visible === false){
-        (entry.glLayerIds||[]).forEach(lid=>{ if(mapgl.getLayer(lid)) mapgl.setLayoutProperty(lid,'visibility','none'); });
-        if(entry.lfGroup) mapleaf.removeLayer(entry.lfGroup);
-      }
-    }
-
-    layerSeq = Math.max(layerSeq, ...layerList.map(l=>l.id)) + 1;
-    featureSeq = Math.max(1, ...layerList.flatMap(l => (l.data?.features||[]).map(f => f.properties?.fid || 0))) + 1;
-
-    renderGroupsVisibility(); renderLayers();
-    return layerList.length>0;
-  }catch(e){ console.warn('Restore failed',e); return false; }
+/* Wipe all current layers and maps before applying remote state */
+function clearAllLayers(){
+  for(const entry of [...layerList]){
+    (entry.glLayerIds||[]).forEach(id=>{ if(mapgl.getLayer(id)) try{mapgl.removeLayer(id);}catch{} });
+    if(entry.glSourceId && mapgl.getSource(entry.glSourceId)) try{mapgl.removeSource(entry.glSourceId);}catch{};
+    if(entry.lfGroup) try{entry.lfGroup.remove();}catch{};
+  }
+  layerList.length = 0;
+  renderGroupsVisibility(); renderLayers();
 }
 
-/* Start: restore first; if empty, preload geohashes THEN coins (coins on top) */
-window.addEventListener('DOMContentLoaded', async ()=>{
-  const restored = await restoreState();
-  if (!restored){
-    try { await loadKMZFromUrl(encodeURI(PRELOAD_GEOHASHES), 'Geohashes'); } catch(e){ console.warn('Preload geohashes failed', e); }
-    for (const name of PRELOAD_COINS){
-      try { await loadKMZFromUrl(encodeURI(name)); console.log('Preloaded', name); break; }
-      catch(e){ console.warn('Preload failed for', name); }
+/* Apply a full saved state array -> into live app */
+async function applyStateArray(arr){
+  clearAllLayers();
+  await ensureAllIconsOnCurrentStyle();
+  for (const saved of (arr||[])){
+    const entry={ id:saved.id ?? layerSeq++, name:saved.name ?? 'Layer', visible:saved.visible!==false, data:saved.data, items:saved.items||[], glSourceId:null, glLayerIds:[], lfGroup:null, lfLayers:null };
+    await rebindFeatureIcons(entry);
+    layerList.push(entry);
+    if(mapgl.isStyleLoaded && mapgl.isStyleLoaded()) createGroupOnGL(entry); else mapgl.once('load',()=>createGroupOnGL(entry));
+    createGroupOnLeaflet(entry);
+    if(entry.visible === false){
+      (entry.glLayerIds||[]).forEach(lid=>{ if(mapgl.getLayer(lid)) mapgl.setLayoutProperty(lid,'visibility','none'); });
+      if(entry.lfGroup) mapleaf.removeLayer(entry.lfGroup);
     }
+  }
+  layerSeq = Math.max( (layerList.map(l=>l.id).concat(0)) ) + 1;
+  featureSeq = Math.max( ...layerList.flatMap(l => (l.data?.features||[]).map(f => f.properties?.fid || 0)), 0) + 1;
+  renderGroupsVisibility(); renderLayers();
+}
+
+/* =======================
+   === SUPABASE INTEGRATION ===
+   ======================= */
+const SUPABASE_URL = 'https://hctlvkqjvfdwgenwurxk.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhjdGx2a3FqdmZkd2dlbnd1cnhrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzg1MjIsImV4cCI6MjA3MzYxNDUyMn0.w8MSkl7k3fZZER25enTlC3U4V5g4v7ySIdNSHjSlp5o';
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+let currentRoomCode = null;
+const clientId = (()=>crypto.getRandomValues(new Uint32Array(4)).join('-'))();
+
+function debounce(fn, ms){ let t=null; return (...args)=>{ clearTimeout(t); t=setTimeout(()=>fn(...args), ms); }; }
+
+async function fetchRoom(code){
+  const { data, error } = await supabase.from('rooms').select('*').eq('code', code).maybeSingle();
+  if(error) throw error;
+  return data;
+}
+
+async function upsertRoomState(code, state){
+  const { error } = await supabase.from('rooms').upsert({
+    code,
+    state,
+    updated_by: clientId,
+    updated_at: new Date().toISOString()
+  }, { onConflict:'code' });
+  if(error) throw error;
+}
+
+let suppressNextRemoteApply = false; // guard for local->remote echo
+
+const syncToServerDebounced = debounce(async function(){
+  if(!currentRoomCode) return;
+  const state = shallowSerializableState();
+  try{
+    suppressNextRemoteApply = true; // we expect to hear our own update back
+    await upsertRoomState(currentRoomCode, state);
+    localSaveOnly(); // still keep local cache up to date
+  }catch(e){
+    console.warn('Supabase sync failed:', e);
+  }finally{
+    setTimeout(()=>{ suppressNextRemoteApply=false; }, 250);
+  }
+}, 350);
+
+/* Override saveState to also push to server */
+function saveState(){ syncToServerDebounced(); }
+
+/* Subscribe to realtime updates for the active room */
+let roomChannel = null;
+function subscribeRoom(code){
+  if(roomChannel){ roomChannel.unsubscribe(); roomChannel=null; }
+  roomChannel = supabase.channel('rooms-'+code)
+    .on('postgres_changes',
+      { event: '*', schema: 'public', table: 'rooms', filter: 'code=eq.'+code },
+      async payload=>{
+        if(payload.eventType !== 'UPDATE' && payload.eventType !== 'INSERT') return;
+        const row = payload.new || payload.record;
+        if(!row) return;
+        if(row.updated_by === clientId) return; // ignore our own write
+        if(suppressNextRemoteApply) return;     // debounced echo guard
+        try{
+          await applyStateArray(row.state || []);
+          localSaveOnly();
+        }catch(e){
+          console.error('Apply remote state failed', e);
+        }
+      }
+    )
+    .subscribe((status)=>{ /* optional: console.log('Realtime', status); */ });
+}
+
+/* Join/create a room, load state or seed with preload */
+async function joinRoom(code){
+  currentRoomCode = code;
+  try{
+    const existing = await fetchRoom(code);
+    if(existing && existing.state && existing.state.length){
+      await applyStateArray(existing.state);
+    }else{
+      // seed: your original preload flow
+      clearAllLayers();
+      let seeded=false;
+      try { await loadKMZFromUrl(encodeURI(PRELOAD_GEOHASHES), 'Geohashes'); seeded=true; } catch(e){ console.warn('Preload geohashes failed', e); }
+      if(!seeded){
+        // still allow joining even if preload assets unavailable
+      }
+      for (const name of PRELOAD_COINS){
+        try { await loadKMZFromUrl(encodeURI(name)); console.log('Preloaded', name); break; }
+        catch(e){ console.warn('Preload failed for', name); }
+      }
+      await upsertRoomState(code, shallowSerializableState());
+    }
+    subscribeRoom(code);
+  }catch(e){
+    console.error('Join failed', e);
+    throw e;
+  }
+}
+
+/* ===== Server Code Modal handlers ===== */
+const modal = document.getElementById('server-modal');
+const serverInput = document.getElementById('server-code-input');
+const serverJoin = document.getElementById('server-code-join');
+const serverErr = document.getElementById('server-error');
+
+serverJoin.addEventListener('click', async ()=>{
+  const code = (serverInput.value||'').trim();
+  if(!code){ serverErr.textContent='Please enter a server code.'; serverErr.style.display='block'; return; }
+  serverErr.style.display='none';
+  serverJoin.disabled=true; serverJoin.textContent='Joining...';
+  try{
+    await joinRoom(code);
+    modal.style.display='none';
+  }catch(e){
+    serverErr.textContent='Could not join. Check your connection and try again.';
+    serverErr.style.display='block';
+  }finally{
+    serverJoin.disabled=false; serverJoin.textContent='Join';
   }
 });
 
+/* Allow Enter key */
+serverInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter') serverJoin.click(); });
+
+/* ================= Startup ================= */
+window.addEventListener('DOMContentLoaded', async ()=>{
+  // Wait for user to choose a server code (no local restore here).
+  // Users can still export/import without a room, but we require a code to sync.
+  // Optional: prefill from URL ?server=abc
+  const urlParams = new URLSearchParams(location.search);
+  const preCode = urlParams.get('server') || '';
+  if(preCode){ serverInput.value = preCode; }
+});
 /* ================= Export KML / KMZ ================= */
 function escapeXml(s){return String(s).replace(/[<>&'"]/g,c=>({ '<':'&lt;','>':'&gt;','&':'&amp;',"'":'&apos;','"':'&quot;' }[c]));}
 function kmlColorFromCss(hex,opacity){ const h=(hex||'#0b57d0').replace('#',''); const r=parseInt(h.slice(0,2),16)||0, g=parseInt(h.slice(2,4),16)||0, b=parseInt(h.slice(4,6),16)||0; const a=Math.round((opacity==null?1:opacity)*255); const to2=x=>x.toString(16).padStart(2,'0'); return to2(a)+to2(b)+to2(g)+to2(r); }
