@@ -28,7 +28,8 @@
     }
     html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;}
     .app{position:relative;display:grid;grid-template-columns: var(--side) 1fr;height:100vh;transition:grid-template-columns .28s ease;}
-    .ui-reopen{position:absolute;right:10px;top:10px;z-index:1100;display:none;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:6px 10px;font-weight:700;cursor:pointer;box-shadow:0 2px 14px rgba(0,0,0,.35);color:var(--text);}
+    /* Reopen button now top-left */
+    .ui-reopen{position:absolute;left:10px;top:10px;z-index:1100;display:none;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:6px 10px;font-weight:700;cursor:pointer;box-shadow:0 2px 14px rgba(0,0,0,.35);color:var(--text);}
     .app.ui-collapsed .ui-reopen{display:inline-block;}
     .sidebar{position:relative;background:var(--panel);border-right:1px solid var(--border);overflow:auto;width:var(--side);transition:width .28s ease;}
     .header{padding:12px;border-bottom:1px solid var(--border);}
@@ -74,6 +75,7 @@
     .style-row input[type="color"],.style-row input[type="number"],.style-row input[type="range"]{width:100%;background:#12151b;border:1px solid #1f2430;color:#e5e7eb;border-radius:8px;padding:6px 8px;}
     .style-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:6px;}
     .style-actions .btn{padding:6px 10px;}
+    .btn.danger{background:rgba(239,68,68,.1);border-color:#7f1d1d;color:#fecaca}
 
     /* ---- Server Code Modal ---- */
     .modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;place-items:center;z-index:2000;}
@@ -112,7 +114,9 @@
       box-shadow:0 0 0 1px rgba(0,0,0,.1), 0 1px 2px rgba(0,0,0,.15);
     }
     .custom-geo-ctrl .custom-geo-btn svg{width:18px;height:18px}
-    }
+
+    /* IMPORTANT: Do NOT hide MapTiler's geolocate control anymore */
+    /* (Removed the `.maplibregl-ctrl-geolocate{display:none}` rule) */
   </style>
 </head>
 <body>
@@ -130,6 +134,8 @@
         <button class="btn small" id="add-layer">Add layer</button>
         <button class="btn small" id="export-kml">Export KML</button>
         <button class="btn small" id="export-kmz">Export KMZ</button>
+        <!-- New: open the server modal on demand -->
+        <button class="btn small" id="open-server">Join server</button>
       </div>
 
       <div class="row" style="margin-top:10px;">
@@ -141,7 +147,7 @@
         <div>
           <div class="hint" style="margin-bottom:4px;">Map style</div>
           <select id="basemap">
-            <option value="custom" selected>Sqkii Purple Map</option>
+            <option value="custom" selected>Custom (your MapTiler style)</option>
             <option value="streets">MapTiler Streets</option>
             <option value="dark">MapTiler Dark</option>
             <option value="outdoor">MapTiler Outdoor</option>
@@ -152,7 +158,7 @@
         <div></div>
       </div>
 
-      <div class="hint" style="margin-top:6px;">Dark UI · autosaves to your browser · realtime sync via server code</div>
+      <div class="hint" style="margin-top:6px;">Dark UI · autosaves to your browser · realtime sync when you join a server</div>
     </div>
 
     <div class="dropzone" id="dz">
@@ -180,12 +186,15 @@
     <div class="style-row"><label>Outline</label><input id="se-outline" type="checkbox" checked></div>
     <div class="style-row"><label>Stroke</label><input id="se-stroke" type="color" value="#0b57d0"></div>
     <div class="style-row"><label>Width</label><input id="se-width" type="number" min="0" max="20" step="0.5" value="2"></div>
-    <div class="style-actions"><button class="btn small" id="se-close">Close</button></div>
+    <div class="style-actions">
+      <button class="btn small danger" id="se-delete">Delete</button>
+      <button class="btn small" id="se-close">Close</button>
+    </div>
   </div>
 </div>
 
-<!-- ===== Server Code Modal ===== -->
-<div id="server-modal" class="modal visible">
+<!-- ===== Server Code Modal (STARTS HIDDEN) ===== -->
+<div id="server-modal" class="modal">
   <div class="modal-card">
     <h3>Join a server</h3>
     <small>Enter your shared <strong>Server Code</strong> to sync with others.</small>
@@ -301,32 +310,10 @@ function buildPopupHTMLFromProps(props){
 function bboxOfFeature(f){ let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity; (function scan(c){ if(typeof c[0]==='number'){ const [x,y]=c; minX=Math.min(minX,x); minY=Math.min(minY,y); maxX=Math.max(maxX,x); maxY=Math.max(maxY,y);} else c.forEach(scan); })(f.geometry.coordinates); return [[minX,minY],[maxX,maxY]]; }
 function panPopupIntoViewGL(lngLat,liftPx=180){ const p=mapgl.project(lngLat); p.y-=liftPx; const center=mapgl.unproject(p); mapgl.easeTo({center,duration:350}); }
 
-/* ========== KMZ helpers ========== */
-function blobToDataUrl(blob){ return new Promise(res=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.readAsDataURL(blob); }); }
-async function buildKmzAssetMap(zip){
-  const out={};
-  for(const f of Object.values(zip.files)){
-    if(!f.dir && /\.(png|jpe?g|gif|svg)$/i.test(f.name)){
-      const blob=await f.async('blob');
-      out[f.name] = await blobToDataUrl(blob);
-    }
-  }
-  return out;
+/* exclude tombstones */
+function filteredFeatureCollection(entry){
+  return { type:'FeatureCollection', features:(entry.data?.features||[]).filter(f=>!f?.properties?._deleted) };
 }
-function resolveIconHref(href,opts){
-  if(!href) return '';
-  if(/^(https?:|data:)/i.test(href)) return href;
-  if(opts && opts.assetMap){
-    if(opts.assetMap[href]) return opts.assetMap[href];
-    const base=href.split(/[\\/]/).pop();
-    for(const k of Object.keys(opts.assetMap)){
-      if(k===base || k.endsWith('/'+base)) return opts.assetMap[k];
-    }
-  }
-  if(opts && opts.baseUrl){ try{return new URL(href,opts.baseUrl).href;}catch(e){} }
-  return href;
-}
-function extractKmlMeta(xmlDoc,opts){ function t(n,sel){ const el=n.querySelector(sel); return el ? (el.textContent||'').trim():''; } const styleById={},smById={}; xmlDoc.querySelectorAll('Style[id], style[id]').forEach(s=>styleById[s.getAttribute('id')]=s); xmlDoc.querySelectorAll('StyleMap[id], styleMap[id]').forEach(s=>smById[s.getAttribute('id')]=s); function resolveStyleUrl(url){ if(!url) return null; const id=url.replace(/^#/,''); const sm=smById[id]; if(sm){ for(const p of sm.querySelectorAll('Pair')) if((t(p,'key')||'').toLowerCase()==='normal'){ const su=t(p,'styleUrl'); if(su) return resolveStyleUrl(su); } } return styleById[id]||null; } function topFolderName(node){ let cur=node.parentNode,top=''; while(cur&&cur.nodeType===1){ if(/Folder/i.test(cur.tagName)){ const nm=t(cur,'name'); if(nm) top=nm; } cur=cur.parentNode; } return top||'Untitled layer'; } function parseStyle(sEl){ if(!sEl) return {}; const iconHref=t(sEl,'IconStyle Icon href')||t(sEl,'iconStyle icon href'); const lineColor=t(sEl,'LineStyle color')||t(sEl,'lineStyle color'); const lineWidth=t(sEl,'LineStyle width')||t(sEl,'lineStyle width'); const polyColor=t(sEl,'PolyStyle color')||t(sEl,'polyStyle color'); return {iconHref:resolveIconHref(iconHref,opts),lineColor,lineWidth,polyColor}; } const metas=[]; xmlDoc.querySelectorAll('Placemark, placemark').forEach(pm=>{ const sEl=resolveStyleUrl(t(pm,'styleUrl')); metas.push({name:t(pm,'name'), topFolder:topFolderName(pm), style:parseStyle(sEl)}); }); return metas; }
 
 /* ================= MapLibre overlay ================= */
 function createGroupOnGL(entry, clearIfExists){
@@ -342,9 +329,9 @@ function createGroupOnGL(entry, clearIfExists){
     }
 
     if(mapgl.getSource(srcId)) mapgl.removeSource(srcId);
-    mapgl.addSource(srcId,{type:'geojson', promoteId:'fid', data:entry.data});
+    mapgl.addSource(srcId,{type:'geojson', promoteId:'fid', data:filteredFeatureCollection(entry)});
 
-    const notHidden=['!=',['get','hidden'],true];
+    const notHidden=['all',['!=',['get','hidden'],true],['!=',['get','_deleted'],true]];
 
     mapgl.addLayer({ id:fillId, type:'fill', source:srcId,
       filter:['all',notHidden,['in',['geometry-type'],['literal',['Polygon','MultiPolygon']]]],
@@ -380,7 +367,7 @@ function createGroupOnGL(entry, clearIfExists){
     attachLongPressGL(polyEdgeId, entry);
   });
 }
-function refreshGroupGL(entry){ const src=mapgl.getSource(entry.glSourceId); if(src) src.setData(entry.data); }
+function refreshGroupGL(entry){ const src=mapgl.getSource(entry.glSourceId); if(src) src.setData(filteredFeatureCollection(entry)); }
 
 /* ================= Leaflet overlay ================= */
 function dollarDataUrl(size=32){ return 'data:image/svg+xml;charset=UTF-8,'+encodeURIComponent(dollarSvg(size)); }
@@ -390,7 +377,7 @@ function createGroupOnLeaflet(entry,rebuild=false){
   entry.lfGroup=L.layerGroup().addTo(mapleaf);
   entry.lfLayers=new Map();
 
-  entry.data.features.forEach(f=>{
+  filteredFeatureCollection(entry).features.forEach(f=>{
     const fid=f.properties.fid, list=[];
     const strokeOn = (f.properties._strokeOpacity ?? 0.9) > 0 && (f.properties._weight ?? 2) > 0;
     const polyStyle={ color:f.properties._stroke||'#0b57d0', weight:f.properties._weight||2, opacity:f.properties._strokeOpacity ?? 0.9, fillColor:f.properties._fill||'#0b57d0', fillOpacity:f.properties._fillOpacity ?? 0.2, stroke: strokeOn };
@@ -459,10 +446,10 @@ function renderLayers(){
 
       for(const it of entry.items){
         const row=document.createElement('div'); row.className='feature';
-        const ico=document.createElement('div'); ico.className='group-bullet'; ico.textContent=it.label || '$';
+        const ico=document.createElement('div'); ico.className='group-bullet'; ico.textContent=it.label || '•';
         const name=document.createElement('div'); name.className='name'; name.textContent=it.name; name.onclick=()=> zoomToFeature(entry,it.fid);
         const togg=document.createElement('div'); togg.className=it.visible!==false?'toggle checked':'toggle';
-        togg.onclick=()=>{ it.visible=!(it.visible!==false); const gf=entry.data.features.find(f=>f.properties.fid===it.fid); if(gf){ gf.properties.hidden = it.visible===false; refreshGroupBoth(entry); } togg.className=it.visible!==false?'toggle checked':'toggle'; saveState(); };
+        togg.onclick=()=>{ it.visible=!(it.visible!==false); const gf=entry.data.features.find(f=>f.properties.fid===it.fid); if(gf){ gf.properties.hidden = it.visible===false; gf.properties._ts = Date.now(); refreshGroupBoth(entry); } togg.className=it.visible!==false?'toggle checked':'toggle'; saveState(); };
         row.append(ico,name,togg); wrap.appendChild(row);
       }
     }
@@ -472,13 +459,13 @@ function renderLayers(){
 function zoomToFeature(entry,fid){ const f=entry.data.features.find(x=>x.properties&&x.properties.fid===fid); if(!f) return; const b=bboxOfFeature(f); if(engine==='gl') mapgl.fitBounds(b,{padding:40,duration:600}); else mapleaf.fitBounds([[b[0][1],b[0][0]],[b[1][1],b[1][0]]],{padding:[40,40]}); }
 
 /* ================= Loaders ================= */
-async function loadKMZFile(file,forceGroupName){ try{ const zip=await JSZip.loadAsync(file); const kmlEntry=Object.values(zip.files).find(f=>f.name.toLowerCase().endsWith('.kml')); if(!kmlEntry){ alert('No .kml found inside KMZ: '+file.name); return; } const assetMap=await buildKmzAssetMap(zip); const text=await kmlEntry.async('text'); addKmlText(text,file.name,{assetMap},forceGroupName); }catch(e){ console.error(e); alert('Failed to read KMZ: '+file.name); } }
+async function loadKMZFile(file,forceGroupName){ try{ const zip=await JSZip.loadAsync(file); const kmlEntry=Object.values(zip.files).find(f=>f.name.toLowerCase().endsWith('.kml')); if(!kmlEntry){ alert('No .kml found inside KMZ: '+file.name); return; } const assetMap=await (async()=>{const out={}; for(const f of Object.values(zip.files)){ if(!f.dir && /\.(png|jpe?g|gif|svg)$/i.test(f.name)){ const blob=await f.async('blob'); out[f.name]=await new Promise(res=>{const r=new FileReader(); r.onload=()=>res(r.result); r.readAsDataURL(blob);}); } } return out; })(); const text=await kmlEntry.async('text'); addKmlText(text,file.name,{assetMap},forceGroupName); }catch(e){ console.error(e); alert('Failed to read KMZ: '+file.name); } }
 async function loadKMLFromUrl(url,forceGroupName){ const res=await fetch(url); if(!res.ok) throw new Error('HTTP '+res.status); const text=await res.text(); addKmlText(text,url.split('/').pop()||'remote.kml',{baseUrl:url},forceGroupName); }
-async function loadKMZFromUrl(url,forceGroupName){ const res=await fetch(url); if(!res.ok) throw new Error('HTTP '+res.status); const blob=await res.blob(); const zip=await JSZip.loadAsync(blob); const kmlEntry=Object.values(zip.files).find(f=>f.name.toLowerCase().endsWith('.kml')); if(!kmlEntry) throw new Error('No .kml inside KMZ'); const assetMap=await buildKmzAssetMap(zip); const text=await kmlEntry.async('text'); addKmlText(text,url.split('/').pop()||'remote.kmz',{assetMap,baseUrl:url},forceGroupName); }
+async function loadKMZFromUrl(url,forceGroupName){ const res=await fetch(url); if(!res.ok) throw new Error('HTTP '+res.status); const blob=await res.blob(); const zip=await JSZip.loadAsync(blob); const kmlEntry=Object.values(zip.files).find(f=>f.name.toLowerCase().endsWith('.kml')); if(!kmlEntry) throw new Error('No .kml inside KMZ'); const assetMap=await (async()=>{const out={}; for(const f of Object.values(zip.files)){ if(!f.dir && /\.(png|jpe?g|gif|svg)$/i.test(f.name)){ const b=await f.async('blob'); out[f.name]=await new Promise(res=>{const r=new FileReader(); r.onload=()=>res(r.result); r.readAsDataURL(b);}); } } return out; })(); const text=await kmlEntry.async('text'); addKmlText(text,url.split('/').pop()||'remote.kmz',{assetMap,baseUrl:url},forceGroupName); }
 
 function addKmlText(text,filename,opts,forceGroupName){
   const xml=new DOMParser().parseFromString(text,'text/xml');
-  const metaList=extractKmlMeta(xml,opts||{});
+  const metaList=(function extractKmlMeta(xmlDoc,opts){ function t(n,sel){ const el=n.querySelector(sel); return el ? (el.textContent||'').trim():''; } const styleById={},smById={}; xmlDoc.querySelectorAll('Style[id], style[id]').forEach(s=>styleById[s.getAttribute('id')]=s); xmlDoc.querySelectorAll('StyleMap[id], styleMap[id]').forEach(s=>smById[s.getAttribute('id')]=s); function resolveStyleUrl(url){ if(!url) return null; const id=url.replace(/^#/,''); const sm=smById[id]; if(sm){ for(const p of sm.querySelectorAll('Pair')) if((t(p,'key')||'').toLowerCase()==='normal'){ const su=t(p,'styleUrl'); if(su) return resolveStyleUrl(su); } } return styleById[id]||null; } function topFolderName(node){ let cur=node.parentNode,top=''; while(cur&&cur.nodeType===1){ if(/Folder/i.test(cur.tagName)){ const nm=t(cur,'name'); if(nm) top=nm; } cur=cur.parentNode; } return top||'Untitled layer'; } function parseStyle(sEl){ if(!sEl) return {}; const iconHref=t(sEl,'IconStyle Icon href')||t(sEl,'iconStyle icon href'); const lineColor=t(sEl,'LineStyle color')||t(sEl,'lineStyle color'); const lineWidth=t(sEl,'LineStyle width')||t(sEl,'lineStyle width'); const polyColor=t(sEl,'PolyStyle color')||t(sEl,'polyStyle color'); return {iconHref:(function resolveIconHref(href,opts){ if(!href) return ''; if(/^(https?:|data:)/i.test(href)) return href; if(opts && opts.assetMap){ if(opts.assetMap[href]) return opts.assetMap[href]; const base=href.split(/[\\/]/).pop(); for(const k of Object.keys(opts.assetMap)){ if(k===base || k.endsWith('/'+base)) return opts.assetMap[k]; } } if(opts && opts.baseUrl){ try{return new URL(href,opts.baseUrl).href;}catch(e){} } return href; })(iconHref,opts),lineColor,lineWidth,polyColor}; } const metas=[]; xmlDoc.querySelectorAll('Placemark, placemark').forEach(pm=>{ const sEl=resolveStyleUrl(t(pm,'styleUrl')); metas.push({name:t(pm,'name'), topFolder:topFolderName(pm), style:parseStyle(sEl)}); }); return metas; })(xml,opts||{});
   const gj=window.toGeoJSON.kml(xml);
   if(!gj || !gj.features || !gj.features.length){ alert('No features in '+filename); return; }
 
@@ -507,7 +494,7 @@ function addKmlText(text,filename,opts,forceGroupName){
       const label = isPoint ? defaultLabelFrom(itemName) : '•';
 
       const enriched={ type:'Feature', geometry:f.geometry,
-        properties:{ ...props, name:itemName, fid, hidden:false, _label:isPoint?label:'', _icon:isPoint?iconName:undefined, _iconUrl:isPoint?iconUrl:undefined, _iconSize:1, ...style } };
+        properties:{ ...props, name:itemName, fid, hidden:false, _label:isPoint?label:'', _icon:isPoint?iconName:undefined, _iconUrl:isPoint?iconUrl:undefined, _iconSize:1, _ts:Date.now(), _gid:fid, ...style } };
       features.push(enriched); items.push({fid,name:itemName,label,visible:true});
     }
 
@@ -563,14 +550,16 @@ document.getElementById('basemap').addEventListener('change', (e)=>{
   closeStyleEditor();
 });
 
-/* ===== Preload sequence ===== */
+/* ===== Preload names (optional) ===== */
 const PRELOAD_GEOHASHES = 'geohashesGold.kmz';
 const PRELOAD_COINS = ['All Coin Records 2023-2024.kmz','All Coins Record 2023-2024.kmz','All Coins Records 2023-2024.kmz'];
 
-/* ===== Long-press style editor ===== */
+/* ===== Long-press style editor (850ms) ===== */
 const editorEl=byId('style-editor');
-const seFill=byId('se-fill'), seFillOp=byId('se-fillop'), seOutline=byId('se-outline'), seStroke=byId('se-stroke'), seWidth=byId('se-width'), seClose=byId('se-close');
+const seFill=byId('se-fill'), seFillOp=byId('se-fillop'), seOutline=byId('se-outline'), seStroke=byId('se-stroke'), seWidth=byId('se-width'), seClose=byId('se-close'), seDelete=byId('se-delete');
 let editCtx=null;
+const LONGPRESS_MS = 850;
+
 function openStyleEditor(entry,fid,screenX,screenY){
   editCtx={entry,fid};
   const f=entry.data.features.find(x=>x.properties.fid===fid); if(!f) return;
@@ -582,7 +571,7 @@ function openStyleEditor(entry,fid,screenX,screenY){
   seStroke.value = p._stroke || '#0b57d0';
   seWidth.value = p._weight ?? 2;
   editorEl.style.left = Math.min(screenX+10, window.innerWidth-280)+'px';
-  editorEl.style.top  = Math.min(screenY+10, window.innerHeight-220)+'px';
+  editorEl.style.top  = Math.min(screenY+10, window.innerHeight-240)+'px';
   editorEl.style.display='block';
 }
 function closeStyleEditor(){ editorEl.style.display='none'; editCtx=null; }
@@ -595,10 +584,34 @@ function applyEditor(){
   p._fillOpacity = parseFloat(seFillOp.value);
   if(seOutline.checked){ p._stroke = seStroke.value; p._weight = parseFloat(seWidth.value)||0; p._strokeOpacity = 0.9; }
   else { p._strokeOpacity = 0.0; p._weight = 0; }
+  p._ts = Date.now();
   refreshGroupBoth(entry); saveState();
 }
 [seFill,seFillOp,seOutline,seStroke,seWidth].forEach(inp=> inp.addEventListener('input', applyEditor));
 seClose.addEventListener('click', closeStyleEditor);
+
+/* Delete with tombstone */
+seDelete.addEventListener('click', ()=>{
+  if(!editCtx) return;
+  const {entry,fid}=editCtx;
+  const ix = entry.data.features.findIndex(x=>x.properties.fid===fid);
+  if(ix<0) return;
+  const p = entry.data.features[ix].properties || {};
+  if(!confirm('Delete this feature?')) return;
+
+  entry.data.features.splice(ix,1);
+  const key = p._gid || p.fid;
+  entry.data.features.push({
+    type:'Feature',
+    geometry:{type:'Point',coordinates:[0,0]},
+    properties:{ fid:key, _gid:key, _deleted:true, _ts:Date.now(), name:p.name||'Deleted feature' }
+  });
+  const itx = entry.items.findIndex(it=>String(it.fid)===String(fid));
+  if(itx>=0) entry.items.splice(itx,1);
+
+  refreshGroupBoth(entry); renderLayers(); renderGroupsVisibility(); saveState();
+  closeStyleEditor();
+});
 
 function attachLongPressGL(layerId, entry){
   let t=null;
@@ -609,7 +622,7 @@ function attachLongPressGL(layerId, entry){
     if(type!=='Polygon' && type!=='MultiPolygon') return;
     const fid=feat.properties && feat.properties.fid;
     const pt=e.point||{x:0,y:0};
-    t=setTimeout(()=>{ openStyleEditor(entry,fid, pt.x, pt.y); }, 500);
+    t=setTimeout(()=>{ openStyleEditor(entry,fid, pt.x, pt.y); }, LONGPRESS_MS);
   }
   ['mousedown','touchstart'].forEach(ev=> mapgl.on(ev, layerId, start));
   ['mouseup','mouseleave','drag','move','touchend','touchcancel'].forEach(ev=> mapgl.on(ev, clear));
@@ -617,7 +630,7 @@ function attachLongPressGL(layerId, entry){
 function attachLongPressLeaf(ev, entry, fid){
   let timer=null;
   function cancel(){ if(timer){ clearTimeout(timer); timer=null; } }
-  timer=setTimeout(()=>{ const p=ev.originalEvent && ev.originalEvent.touches && ev.originalEvent.touches[0] ? ev.originalEvent.touches[0] : ev.originalEvent; openStyleEditor(entry,fid, p.clientX, p.clientY); }, 500);
+  timer=setTimeout(()=>{ const p=ev.originalEvent && ev.originalEvent.touches && ev.originalEvent.touches[0] ? ev.originalEvent.touches[0] : ev.originalEvent; openStyleEditor(entry,fid, p.clientX, p.clientY); }, LONGPRESS_MS);
   document.addEventListener('mouseup', ()=>cancel(), {once:true});
   document.addEventListener('touchend', ()=>cancel(), {once:true});
 }
@@ -626,51 +639,11 @@ document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeStyleEdito
 /* ================= Autosave / Restore (local) ================= */
 const LS_KEY='sqkii-mapper-state-v1';
 function shallowSerializableState(){ return layerList.map(l=>({ id:l.id, name:l.name, visible:l.visible!==false, data:l.data, items:l.items })); }
-/* IMPORTANT: saveState is overridden below to also sync to Supabase */
 function localSaveOnly(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(shallowSerializableState())); }catch(e){ console.warn('Autosave failed',e); } }
 window.addEventListener('beforeunload', localSaveOnly);
 
-async function rebindFeatureIcons(entry){
-  for (const f of (entry.data?.features || [])) {
-    const p = f.properties || {};
-    if (p._iconUrl) {
-      const id = registerIconUrl(p._iconUrl);
-      if (id) p._icon = id;
-    } else if (p._icon == null) {
-      p._icon = DOLLAR_ICON_NAME;
-    }
-  }
-}
-function clearAllLayers(){
-  for(const entry of [...layerList]){
-    (entry.glLayerIds||[]).forEach(id=>{ if(mapgl.getLayer(id)) try{mapgl.removeLayer(id);}catch{} });
-    if(entry.glSourceId && mapgl.getSource(entry.glSourceId)) try{mapgl.removeSource(entry.glSourceId);}catch{};
-    if(entry.lfGroup) try{entry.lfGroup.remove();}catch{};
-  }
-  layerList.length = 0;
-  renderGroupsVisibility(); renderLayers();
-}
-async function applyStateArray(arr){
-  clearAllLayers();
-  await ensureAllIconsOnCurrentStyle();
-  for (const saved of (arr||[])){
-    const entry={ id:saved.id ?? layerSeq++, name:saved.name ?? 'Layer', visible:saved.visible!==false, data:saved.data, items:saved.items||[], glSourceId:null, glLayerIds:[], lfGroup:null, lfLayers:null };
-    await rebindFeatureIcons(entry);
-    layerList.push(entry);
-    if(mapgl.isStyleLoaded && mapgl.isStyleLoaded()) createGroupOnGL(entry); else mapgl.once('load',()=>createGroupOnGL(entry));
-    createGroupOnLeaflet(entry);
-    if(entry.visible === false){
-      (entry.glLayerIds||[]).forEach(lid=>{ if(mapgl.getLayer(lid)) mapgl.setLayoutProperty(lid,'visibility','none'); });
-      if(entry.lfGroup) mapleaf.removeLayer(entry.lfGroup);
-    }
-  }
-  layerSeq = Math.max( (layerList.map(l=>l.id).concat(0)) ) + 1;
-  featureSeq = Math.max( ...layerList.flatMap(l => (l.data?.features||[]).map(f => f.properties?.fid || 0)), 0) + 1;
-  renderGroupsVisibility(); renderLayers();
-}
-
 /* =======================
-   === SUPABASE INTEGRATION (merge-safe) ===
+   === SUPABASE INTEGRATION ===
    ======================= */
 const SUPABASE_URL = 'https://dfzsndktevcjjbtfwrvs.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRmenNuZGt0ZXZjampidGZ3cnZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwNDYxMzMsImV4cCI6MjA3MzYyMjEzM30.C9VbQMkl1Y4R-K5Dl2GwOxh58afFCQo5h2aK3RE8HpY';
@@ -678,7 +651,6 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let currentRoomCode = null;
 const clientId = (()=>crypto.getRandomValues(new Uint32Array(4)).join('-'))();
-
 function debounce(fn, ms){ let t=null; return (...args)=>{ clearTimeout(t); t=setTimeout(()=>fn(...args), ms); }; }
 
 async function fetchRoom(code){
@@ -687,19 +659,6 @@ async function fetchRoom(code){
   return data;
 }
 
-/* ---- MERGING: read-modify-write so scans from others don't disappear ---- */
-async function upsertRoomState(code, state){
-  const remote = await fetchRoom(code).catch(()=>null);
-  const remoteState = (remote && Array.isArray(remote.state)) ? remote.state : [];
-  const merged = mergeStates(remoteState, state);
-  const { error } = await supabase.from('rooms').upsert({
-    code,
-    state: merged,
-    updated_by: clientId,
-    updated_at: new Date().toISOString()
-  }, { onConflict:'code' });
-  if(error) throw error;
-}
 function featureKey(f){ const p=f&&f.properties||{}; return String(p._gid ?? p.fid ?? ''); }
 function newerFeature(a,b){ const ta=a?.properties?._ts ?? 0; const tb=b?.properties?._ts ?? 0; return (tb>ta)?b:a; }
 function mergeLayer(remoteL, localL){
@@ -710,7 +669,9 @@ function mergeLayer(remoteL, localL){
   for(const f of (remoteL.data?.features||[])){ const k=featureKey(f)||`rf-${Math.random()}`; byKey.set(k,f); }
   for(const f of (localL.data?.features||[])){ const k=featureKey(f)||`lf-${Math.random()}`; byKey.set(k, byKey.has(k)?newerFeature(byKey.get(k),f):f); }
   out.data.features=[...byKey.values()];
-  out.items = out.data.features.map(f=>({ fid:f.properties?.fid, name:f.properties?.name||'Feature', label:(f.geometry?.type==='Point')?(f.properties?._label||'•'):'•', visible:!(f.properties?.hidden) }));
+  out.items = out.data.features
+    .filter(f=>!f.properties?._deleted)
+    .map(f=>({ fid:f.properties?.fid, name:f.properties?.name||'Feature', label:(f.geometry?.type==='Point')?(f.properties?._label||'•'):'•', visible:!(f.properties?.hidden) }));
   return out;
 }
 function layerKey(L){ return String(L?.name ?? L?.id ?? ''); }
@@ -722,13 +683,21 @@ function mergeStates(remoteArr, localArr){
 }
 
 let suppressNextRemoteApply = false;
-
 const syncToServerDebounced = debounce(async function(){
-  if(!currentRoomCode) return;
+  if(!currentRoomCode) return; // local-only mode
   const state = shallowSerializableState();
   try{
     suppressNextRemoteApply = true;
-    await upsertRoomState(currentRoomCode, state);
+    const remote = await fetchRoom(currentRoomCode).catch(()=>null);
+    const remoteState = (remote && Array.isArray(remote.state)) ? remote.state : [];
+    const merged = mergeStates(remoteState, state);
+    const { error } = await supabase.from('rooms').upsert({
+      code: currentRoomCode,
+      state: merged,
+      updated_by: clientId,
+      updated_at: new Date().toISOString()
+    }, { onConflict:'code' });
+    if(error) throw error;
     localSaveOnly();
   }catch(e){
     console.warn('Supabase sync failed:', e);
@@ -736,7 +705,6 @@ const syncToServerDebounced = debounce(async function(){
     setTimeout(()=>{ suppressNextRemoteApply=false; }, 250);
   }
 }, 350);
-
 function saveState(){ syncToServerDebounced(); }
 
 let roomChannel = null;
@@ -765,14 +733,19 @@ async function joinRoom(code){
     if(existing && existing.state && existing.state.length){
       await applyStateArray(existing.state);
     }else{
-      clearAllLayers();
-      let seeded=false;
-      try { await loadKMZFromUrl(encodeURI(PRELOAD_GEOHASHES), 'Geohashes'); seeded=true; } catch(e){ console.warn('Preload geohashes failed', e); }
+      // seed brand-new
+      try { await loadKMZFromUrl(encodeURI(PRELOAD_GEOHASHES), 'Geohashes'); } catch(e){ console.warn('Preload geohashes failed', e); }
       for (const name of PRELOAD_COINS){
         try { await loadKMZFromUrl(encodeURI(name)); console.log('Preloaded', name); break; }
-        catch(e){ console.warn('Preload failed for', name); }
+        catch(e){ /* ignore */ }
       }
-      await upsertRoomState(code, shallowSerializableState());
+      const { error } = await supabase.from('rooms').upsert({
+        code,
+        state: shallowSerializableState(),
+        updated_by: clientId,
+        updated_at: new Date().toISOString()
+      }, { onConflict:'code' });
+      if(error) throw error;
     }
     subscribeRoom(code);
   }catch(e){
@@ -786,6 +759,7 @@ const modal = document.getElementById('server-modal');
 const serverInput = document.getElementById('server-code-input');
 const serverJoin = document.getElementById('server-code-join');
 const serverErr = document.getElementById('server-error');
+document.getElementById('open-server').addEventListener('click', ()=> modal.classList.add('visible'));
 
 serverJoin.addEventListener('click', async ()=>{
   const code = (serverInput.value||'').trim();
@@ -797,19 +771,26 @@ serverJoin.addEventListener('click', async ()=>{
     modal.classList.remove('visible');
   }catch(e){
     console.error('Join failed', e);
-    serverErr.textContent='Join failed: '+(e?.message||'Check connection / DNS / RLS / table.');
+    serverErr.textContent='Join failed: '+(e?.message||'Check connection / policies / table.');
     serverErr.style.display='block';
   }finally{
     serverJoin.disabled=false; serverJoin.textContent='Join';
   }
 });
-document.getElementById('server-continue').addEventListener('click', ()=>{
-  modal.classList.remove('visible');
-  try{ const raw=localStorage.getItem(LS_KEY); if(raw) applyStateArray(JSON.parse(raw)); }catch{}
+document.getElementById('server-continue').addEventListener('click', ()=> modal.classList.remove('visible'));
+
+/* Auto-open if ?server=CODE present */
+window.addEventListener('DOMContentLoaded', ()=>{
+  const urlParams = new URLSearchParams(location.search);
+  const preCode = urlParams.get('server') || '';
+  if(preCode){
+    modal.classList.add('visible');
+    serverInput.value = preCode;
+  }
 });
 
 /* ====================== AUDIO + SFX ====================== */
-const bgm = new Audio('Evening Traveler - Road Trip.mp3'); bgm.volume = 0.25; bgm.loop = true;
+const bgm = new Audio('Evening Traveler - Road Trip.mp3'); bgm.volume = 0.5; bgm.loop = true;
 const clickSfx = new Audio(); clickSfx.preload='auto';
 const clickCandidates=['Button.mp3','button.mp3','audio/Button.mp3','audio/button.mp3']; let clickIndex=0;
 function tryLoadNext(){ if(clickIndex>=clickCandidates.length) return; clickSfx.src=clickCandidates[clickIndex++]; clickSfx.load(); }
@@ -821,7 +802,6 @@ document.addEventListener('click', (ev)=>{ if(ev.target.closest('button')) playC
 const sonarSfx = new Audio('sonar-sound.mp3');
 
 /* ====================== GPS CONTROLS ====================== */
-/* MapTiler geolocate control on TOP-RIGHT (button is hidden via CSS, but events still fire) */
 const geolocate = new maptilersdk.GeolocateControl({
   positionOptions: { enableHighAccuracy: true },
   trackUserLocation: true,
@@ -829,8 +809,8 @@ const geolocate = new maptilersdk.GeolocateControl({
 });
 mapgl.addControl(geolocate, 'top-right');
 
-/* Insert our own GREEN browser GPS button just below MapTiler's controls */
-let customGeoAdded = false;   // guard to avoid duplicates after style changes
+/* Our GREEN browser GPS just below MapTiler controls */
+let customGeoAdded = false;
 glReady(()=>{
   if (customGeoAdded) return;
   customGeoAdded = true;
@@ -865,7 +845,7 @@ function onFix(e){
 geolocate.on('geolocate', onFix);
 mapgl.on('geolocate', onFix);
 
-/* Browser-level watchPosition (works even if MapTiler control never fires) */
+/* Browser-level watchPosition */
 let geoWatchId = null;
 function startBrowserWatch(forceOneShot=false){
   if(!('geolocation' in navigator)) return;
@@ -903,16 +883,7 @@ function setActiveChip(container, chip){ container.querySelectorAll('.chip').for
 radiusSeg.addEventListener('click', (e)=>{ const btn=e.target.closest('.chip'); if(!btn) return; sonarRadius=parseInt(btn.dataset.radius,10)||50; setActiveChip(radiusSeg,btn); });
 colorSeg.addEventListener('click', (e)=>{ const btn=e.target.closest('.chip'); if(!btn) return; sonarColor=(btn.dataset.color==='green')?'green':'red'; setActiveChip(colorSeg,btn); });
 
-function circleGeoJSON(lng, lat, radiusMeters, steps=96){
-  const coords=[], R=6378137, d=radiusMeters/R, latRad=lat*Math.PI/180;
-  for(let i=0;i<=steps;i++){
-    const brng=(i/steps)*2*Math.PI;
-    const lat2=Math.asin(Math.sin(latRad)*cos(d)+Math.cos(latRad)*sin(d)*Math.cos(brng));
-  }
-}
-</script>
-<script>
-/* helper trig without Math pollution */
+/* ===== Geometry helpers ===== */
 const sin=Math.sin, cos=Math.cos, asin=Math.asin, atan2=Math.atan2, PI=Math.PI;
 function circleGeoJSON(lng, lat, radiusMeters, steps=96){
   const coords=[], R=6378137, d=radiusMeters/R, latRad=lat*PI/180, lngRad=lng*PI/180;
@@ -924,6 +895,8 @@ function circleGeoJSON(lng, lat, radiusMeters, steps=96){
   }
   return {type:'Polygon',coordinates:[coords]};
 }
+
+/* ===== Sonar layer management ===== */
 function getOrCreateSonarLayer(){
   let entry = layerList.find(l => l.name === 'Coin Sonar Scans');
   if(!entry){
@@ -948,7 +921,7 @@ function addSonarCircle(centerLngLat, radius, color){
   const b=bboxOfFeature({geometry:geom});
   if(engine==='gl') mapgl.fitBounds(b,{padding:40,duration:500}); else mapleaf.fitBounds([[b[0][1],b[0][0]],[b[1][1],b[1][0]]],{padding:[40,40]});
 }
-scanNow.addEventListener('click', async ()=>{
+document.getElementById('scan-now').addEventListener('click', async ()=>{
   if(!lastUserPos){ alert('GPS not ready.'); return; }
   try{ sonarSfx.currentTime=0; sonarSfx.play(); }catch{}
   scanWait.classList.add('visible'); scanNow.disabled=true;
@@ -958,11 +931,8 @@ scanNow.addEventListener('click', async ()=>{
 });
 
 /* ================= Startup ================= */
-window.addEventListener('DOMContentLoaded', async ()=>{
+window.addEventListener('DOMContentLoaded', ()=>{
   bgm.play().catch(()=>{});
-  const urlParams = new URLSearchParams(location.search);
-  const preCode = urlParams.get('server') || '';
-  if(preCode){ serverInput.value = preCode; }
   updateSonarEnabled();
 });
 
@@ -971,6 +941,7 @@ function escapeXml(s){return String(s).replace(/[<>&'"]/g,c=>({ '<':'&lt;','>':'
 function kmlColorFromCss(hex,opacity){ const h=(hex||'#0b57d0').replace('#',''); const r=parseInt(h.slice(0,2),16)||0, g=parseInt(h.slice(2,4),16)||0, b=parseInt(h.slice(4,6),16)||0; const a=Math.round((opacity==null?1:opacity)*255); const to2=x=>x.toString(16).padStart(2,'0'); return to2(a)+to2(b)+to2(g)+to2(r); }
 function serializePlacemark(f){
   const p=f.properties||{}, name=escapeXml(p.name||'Feature'), styleId='s'+(p.fid||'x');
+  if(p._deleted) return '';
   let geomStr='';
   if(f.geometry.type==='Point'){ const [lng,lat]=f.geometry.coordinates; geomStr=`<Point><coordinates>${lng},${lat},0</coordinates></Point>`; }
   else if(f.geometry.type==='LineString'){ geomStr=`<LineString><coordinates>${f.geometry.coordinates.map(c=>c.join(',')).join(' ')}</coordinates></LineString>`; }
@@ -986,10 +957,10 @@ function serializePlacemark(f){
     </Style>`;
   return style + `<Placemark><name>${name}</name><styleUrl>#${styleId}</styleUrl>${geomStr}${p.description?`<description><![CDATA[${p.description}]]></description>`:''}</Placemark>`;
 }
-function exportKMLString(){ const body=layerList.map(l=>`<Folder><name>${escapeXml(l.name)}</name>${l.data.features.filter(f=>!f.properties.hidden).map(serializePlacemark).join('')}</Folder>`).join(''); return `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>${body}</Document></kml>`; }
+function exportKMLString(){ const body=layerList.map(l=>`<Folder><name>${escapeXml(l.name)}</name>${l.data.features.filter(f=>!f.properties.hidden && !f.properties._deleted).map(serializePlacemark).join('')}</Folder>`).join(''); return `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>${body}</Document></kml>`; }
 function downloadBlob(name, blob){ const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(url), 1500); }
-byId('export-kml').onclick=()=>{ const kml=exportKMLString(); downloadBlob('sqkii-export.kml', new Blob([kml],{type:'application/vnd.google-earth.kml+xml'})); };
-byId('export-kmz').onclick=async()=>{ const zip=new JSZip(); const kml=exportKMLString(); zip.file('doc.kml', kml); const blob=await zip.generateAsync({type:'blob'}); downloadBlob('sqkii-export.kmz', blob); };
+document.getElementById('export-kml').onclick=()=>{ const kml=exportKMLString(); downloadBlob('sqkii-export.kml', new Blob([kml],{type:'application/vnd.google-earth.kml+xml'})); };
+document.getElementById('export-kmz').onclick=async()=>{ const zip=new JSZip(); const kml=exportKMLString(); zip.file('doc.kml', kml); const blob=await zip.generateAsync({type:'blob'}); downloadBlob('sqkii-export.kmz', blob); };
 </script>
 </body>
 </html>
