@@ -47,7 +47,6 @@
     .layer+.layer{margin-top:10px;border-radius:10px;overflow:hidden;}
     .layer-head{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px;padding:10px 12px;}
     .layer-head .title{font-weight:700;}
-    .layer-head .note{font-size:12px;color:var(--muted);}
     .layer-head .actions{display:flex;gap:6px;}
     .import-line{padding:8px 12px;background:#0e1420;border-top:1px solid var(--border);}
     .import-line .link{color:var(--accent);font-weight:600;cursor:pointer;}
@@ -77,14 +76,9 @@
     .style-actions .btn{padding:6px 10px;}
 
     /* ---- Server Code Modal ---- */
-    .modal{
-      position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;place-items:center;z-index:2000;
-    }
+    .modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;place-items:center;z-index:2000;}
     .modal.visible{display:grid;}
-    .modal-card{
-      background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:16px;max-width:380px;width:92%;
-      box-shadow:0 12px 40px rgba(0,0,0,.5);
-    }
+    .modal-card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:16px;max-width:380px;width:92%;box-shadow:0 12px 40px rgba(0,0,0,.5);}
     .modal-card h3{margin:0 0 8px 0;font-size:16px}
     .modal-row{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:8px}
     .modal small{color:var(--muted)}
@@ -92,34 +86,32 @@
 
     /* ---- Floating Sonar Button ---- */
     .sonar-btn{
-      position:fixed;right:16px;bottom:16px;z-index:1500;
-      width:64px;height:64px;border-radius:12px;background:#0e1420;
-      border:1px solid var(--border);box-shadow:0 8px 24px rgba(0,0,0,.35);
-      background-image:url('metal-sonar.png'); background-size:cover; background-position:center;
-      cursor:pointer;
+      position:fixed;right:16px;bottom:16px;z-index:1500;width:64px;height:64px;border-radius:12px;background:#0e1420;
+      border:1px solid var(--border);box-shadow:0 8px 24px rgba(0,0,0,.35);background-image:url('metal-sonar.png');
+      background-size:cover;background-position:center;cursor:pointer;
     }
     .sonar-btn.disabled{opacity:.5;filter:grayscale(60%);pointer-events:none;cursor:not-allowed}
 
     /* ---- Sonar Modal ---- */
     .sonar-options{display:grid;gap:10px;margin-top:10px}
     .seg{display:flex;gap:8px;flex-wrap:wrap}
-    .seg .chip{
-      padding:6px 10px;border:1px solid var(--border);border-radius:999px;background:var(--chip);cursor:pointer;font-weight:700
-    }
+    .seg .chip{padding:6px 10px;border:1px solid var(--border);border-radius:999px;background:var(--chip);cursor:pointer;font-weight:700}
     .seg .chip.active{outline:2px solid var(--accent)}
     .seg .chip.red{background:rgba(239,68,68,.12);border-color:#5b1e1e}
     .seg .chip.green{background:rgba(34,197,94,.12);border-color:#1b3e2a}
     .scan-area{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
     .scan-wait{display:none;gap:8px;align-items:center;color:var(--muted);font-weight:700}
     .scan-wait.visible{display:flex}
-    .pulse{
-      width:10px;height:10px;border-radius:999px;background:var(--accent);box-shadow:0 0 0 0 rgba(96,165,250,.7);
-      animation:pulse 1s infinite;
+    .pulse{width:10px;height:10px;border-radius:999px;background:var(--accent);box-shadow:0 0 0 0 rgba(96,165,250,.7);animation:pulse 1s infinite;}
+    @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(96,165,250,.7)}70%{box-shadow:0 0 0 18px rgba(96,165,250,0)}100%{box-shadow:0 0 0 0 rgba(96,165,250,0)}}
+
+    /* ---- Custom Browser GPS Button (green) ---- */
+    .custom-geo-ctrl{margin-top:8px;}
+    .custom-geo-ctrl .custom-geo-btn{
+      width:32px;height:32px;display:grid;place-items:center;background:#fff;border:0;border-radius:2px;cursor:pointer;
+      box-shadow:0 0 0 1px rgba(0,0,0,.1), 0 1px 2px rgba(0,0,0,.15);
     }
-    @keyframes pulse{
-      0%{box-shadow:0 0 0 0 rgba(96,165,250,.7)}
-      70%{box-shadow:0 0 0 18px rgba(96,165,250,0)}
-      100%{box-shadow:0 0 0 0 rgba(96,165,250,0)}
+    .custom-geo-ctrl .custom-geo-btn svg{width:18px;height:18px}
     }
   </style>
 </head>
@@ -149,7 +141,7 @@
         <div>
           <div class="hint" style="margin-bottom:4px;">Map style</div>
           <select id="basemap">
-            <option value="custom" selected>Custom (your MapTiler style)</option>
+            <option value="custom" selected>Sqkii Purple Map</option>
             <option value="streets">MapTiler Streets</option>
             <option value="dark">MapTiler Dark</option>
             <option value="outdoor">MapTiler Outdoor</option>
@@ -201,6 +193,7 @@
       <input id="server-code-input" placeholder="e.g. gold-team" />
       <button id="server-code-join" class="btn small">Join</button>
     </div>
+    <button id="server-continue" class="btn small" style="margin-top:8px">Continue without sync</button>
     <small>New code? We'll create it automatically.</small>
     <div id="server-error" class="err"></div>
   </div>
@@ -239,7 +232,7 @@
 </div>
 
 <!-- Floating Sonar Button -->
-<button id="sonar-btn" class="sonar-btn disabled" title="Turn on GPS (top-left) to use Sonar"></button>
+<button id="sonar-btn" class="sonar-btn disabled" title="Turn on GPS to use Sonar"></button>
 
 <script>
 /* ================= Map engines ================= */
@@ -308,7 +301,7 @@ function buildPopupHTMLFromProps(props){
 function bboxOfFeature(f){ let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity; (function scan(c){ if(typeof c[0]==='number'){ const [x,y]=c; minX=Math.min(minX,x); minY=Math.min(minY,y); maxX=Math.max(maxX,x); maxY=Math.max(maxY,y);} else c.forEach(scan); })(f.geometry.coordinates); return [[minX,minY],[maxX,maxY]]; }
 function panPopupIntoViewGL(lngLat,liftPx=180){ const p=mapgl.project(lngLat); p.y-=liftPx; const center=mapgl.unproject(p); mapgl.easeTo({center,duration:350}); }
 
-/* ========== KMZ helpers: PERSISTENT DATA URLS ========== */
+/* ========== KMZ helpers ========== */
 function blobToDataUrl(blob){ return new Promise(res=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.readAsDataURL(blob); }); }
 async function buildKmzAssetMap(zip){
   const out={};
@@ -570,7 +563,7 @@ document.getElementById('basemap').addEventListener('change', (e)=>{
   closeStyleEditor();
 });
 
-/* ===== Preload sequence + Restore ===== */
+/* ===== Preload sequence ===== */
 const PRELOAD_GEOHASHES = 'geohashesGold.kmz';
 const PRELOAD_COINS = ['All Coin Records 2023-2024.kmz','All Coins Record 2023-2024.kmz','All Coins Records 2023-2024.kmz'];
 
@@ -637,7 +630,6 @@ function shallowSerializableState(){ return layerList.map(l=>({ id:l.id, name:l.
 function localSaveOnly(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(shallowSerializableState())); }catch(e){ console.warn('Autosave failed',e); } }
 window.addEventListener('beforeunload', localSaveOnly);
 
-/* Helper to ensure feature icons after loading external state */
 async function rebindFeatureIcons(entry){
   for (const f of (entry.data?.features || [])) {
     const p = f.properties || {};
@@ -649,8 +641,6 @@ async function rebindFeatureIcons(entry){
     }
   }
 }
-
-/* Wipe all current layers and maps before applying remote state */
 function clearAllLayers(){
   for(const entry of [...layerList]){
     (entry.glLayerIds||[]).forEach(id=>{ if(mapgl.getLayer(id)) try{mapgl.removeLayer(id);}catch{} });
@@ -660,8 +650,6 @@ function clearAllLayers(){
   layerList.length = 0;
   renderGroupsVisibility(); renderLayers();
 }
-
-/* Apply a full saved state array -> into live app */
 async function applyStateArray(arr){
   clearAllLayers();
   await ensureAllIconsOnCurrentStyle();
@@ -682,7 +670,7 @@ async function applyStateArray(arr){
 }
 
 /* =======================
-   === SUPABASE INTEGRATION ===
+   === SUPABASE INTEGRATION (merge-safe) ===
    ======================= */
 const SUPABASE_URL = 'https://dfzsndktevcjjbtfwrvs.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRmenNuZGt0ZXZjampidGZ3cnZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwNDYxMzMsImV4cCI6MjA3MzYyMjEzM30.C9VbQMkl1Y4R-K5Dl2GwOxh58afFCQo5h2aK3RE8HpY';
@@ -699,25 +687,49 @@ async function fetchRoom(code){
   return data;
 }
 
+/* ---- MERGING: read-modify-write so scans from others don't disappear ---- */
 async function upsertRoomState(code, state){
+  const remote = await fetchRoom(code).catch(()=>null);
+  const remoteState = (remote && Array.isArray(remote.state)) ? remote.state : [];
+  const merged = mergeStates(remoteState, state);
   const { error } = await supabase.from('rooms').upsert({
     code,
-    state,
+    state: merged,
     updated_by: clientId,
     updated_at: new Date().toISOString()
   }, { onConflict:'code' });
   if(error) throw error;
 }
+function featureKey(f){ const p=f&&f.properties||{}; return String(p._gid ?? p.fid ?? ''); }
+function newerFeature(a,b){ const ta=a?.properties?._ts ?? 0; const tb=b?.properties?._ts ?? 0; return (tb>ta)?b:a; }
+function mergeLayer(remoteL, localL){
+  if(!remoteL) return localL; if(!localL) return remoteL;
+  const out={ id:remoteL.id??localL.id, name:remoteL.name??localL.name, visible:(localL.visible!==false)||(remoteL.visible!==false),
+    data:{type:'FeatureCollection',features:[]}, items:[], glSourceId:null, glLayerIds:[], lfGroup:null, lfLayers:null };
+  const byKey=new Map();
+  for(const f of (remoteL.data?.features||[])){ const k=featureKey(f)||`rf-${Math.random()}`; byKey.set(k,f); }
+  for(const f of (localL.data?.features||[])){ const k=featureKey(f)||`lf-${Math.random()}`; byKey.set(k, byKey.has(k)?newerFeature(byKey.get(k),f):f); }
+  out.data.features=[...byKey.values()];
+  out.items = out.data.features.map(f=>({ fid:f.properties?.fid, name:f.properties?.name||'Feature', label:(f.geometry?.type==='Point')?(f.properties?._label||'•'):'•', visible:!(f.properties?.hidden) }));
+  return out;
+}
+function layerKey(L){ return String(L?.name ?? L?.id ?? ''); }
+function mergeStates(remoteArr, localArr){
+  const out=new Map();
+  for(const L of (remoteArr||[])) out.set(layerKey(L), L);
+  for(const L of (localArr||[])){ const k=layerKey(L); out.set(k, out.has(k)?mergeLayer(out.get(k),L):L); }
+  return [...out.values()];
+}
 
-let suppressNextRemoteApply = false; // guard for local->remote echo
+let suppressNextRemoteApply = false;
 
 const syncToServerDebounced = debounce(async function(){
   if(!currentRoomCode) return;
   const state = shallowSerializableState();
   try{
-    suppressNextRemoteApply = true; // we expect to hear our own update back
+    suppressNextRemoteApply = true;
     await upsertRoomState(currentRoomCode, state);
-    localSaveOnly(); // still keep local cache up to date
+    localSaveOnly();
   }catch(e){
     console.warn('Supabase sync failed:', e);
   }finally{
@@ -725,34 +737,27 @@ const syncToServerDebounced = debounce(async function(){
   }
 }, 350);
 
-/* Override saveState to also push to server */
 function saveState(){ syncToServerDebounced(); }
 
-/* Subscribe to realtime updates for the active room */
 let roomChannel = null;
 function subscribeRoom(code){
   if(roomChannel){ roomChannel.unsubscribe(); roomChannel=null; }
   roomChannel = supabase.channel('rooms-'+code)
     .on('postgres_changes',
-      { event: '*', schema: 'public', table: 'rooms', filter: 'code=eq.'+code },
+      { event:'*', schema:'public', table:'rooms', filter:'code=eq.'+code },
       async payload=>{
-        if(payload.eventType !== 'UPDATE' && payload.eventType !== 'INSERT') return;
         const row = payload.new || payload.record;
         if(!row) return;
-        if(row.updated_by === clientId) return; // ignore our own write
-        if(suppressNextRemoteApply) return;     // debounced echo guard
+        if(row.updated_by === clientId) return;
+        if(suppressNextRemoteApply) return;
         try{
           await applyStateArray(row.state || []);
           localSaveOnly();
-        }catch(e){
-          console.error('Apply remote state failed', e);
-        }
-      }
-    )
-    .subscribe((status)=>{ /* optional */ });
+        }catch(e){ console.error('Apply remote state failed', e); }
+      })
+    .subscribe(()=>{});
 }
 
-/* Join/create a room, load state or seed with preload */
 async function joinRoom(code){
   currentRoomCode = code;
   try{
@@ -760,7 +765,6 @@ async function joinRoom(code){
     if(existing && existing.state && existing.state.length){
       await applyStateArray(existing.state);
     }else{
-      // seed: your original preload flow
       clearAllLayers();
       let seeded=false;
       try { await loadKMZFromUrl(encodeURI(PRELOAD_GEOHASHES), 'Geohashes'); seeded=true; } catch(e){ console.warn('Preload geohashes failed', e); }
@@ -777,7 +781,7 @@ async function joinRoom(code){
   }
 }
 
-/* ===== Server Code Modal handlers ===== */
+/* ===== Server Modal handlers ===== */
 const modal = document.getElementById('server-modal');
 const serverInput = document.getElementById('server-code-input');
 const serverJoin = document.getElementById('server-code-join');
@@ -792,50 +796,96 @@ serverJoin.addEventListener('click', async ()=>{
     await joinRoom(code);
     modal.classList.remove('visible');
   }catch(e){
-    serverErr.textContent='Could not join. Check your connection and try again.';
+    console.error('Join failed', e);
+    serverErr.textContent='Join failed: '+(e?.message||'Check connection / DNS / RLS / table.');
     serverErr.style.display='block';
   }finally{
     serverJoin.disabled=false; serverJoin.textContent='Join';
   }
 });
+document.getElementById('server-continue').addEventListener('click', ()=>{
+  modal.classList.remove('visible');
+  try{ const raw=localStorage.getItem(LS_KEY); if(raw) applyStateArray(JSON.parse(raw)); }catch{}
+});
 
-/* Allow Enter key */
-serverInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter') serverJoin.click(); });
-
-/* ====================== AUDIO + SONAR ====================== */
-/* Background music and SFX (files must exist beside index.html) */
-const bgm = new Audio('Evening Traveler - Road Trip.mp3'); bgm.volume = 0.3; bgm.loop = true;
-const clickSfxSrc = 'button.mp3';
-function playClick(){ try{ const a = new Audio(clickSfxSrc); a.volume = 1.0; a.play(); }catch{} }
+/* ====================== AUDIO + SFX ====================== */
+const bgm = new Audio('Evening Traveler - Road Trip.mp3'); bgm.volume = 0.25; bgm.loop = true;
+const clickSfx = new Audio(); clickSfx.preload='auto';
+const clickCandidates=['Button.mp3','button.mp3','audio/Button.mp3','audio/button.mp3']; let clickIndex=0;
+function tryLoadNext(){ if(clickIndex>=clickCandidates.length) return; clickSfx.src=clickCandidates[clickIndex++]; clickSfx.load(); }
+clickSfx.addEventListener('error', tryLoadNext); tryLoadNext();
+function unlockAudio(){ bgm.play().catch(()=>{}); clickSfx.play().then(()=>{clickSfx.pause(); clickSfx.currentTime=0;}).catch(()=>{}); document.removeEventListener('pointerdown', unlockAudio, {capture:true}); }
+document.addEventListener('pointerdown', unlockAudio, {capture:true, once:true});
+function playClick(){ try{ const inst=clickSfx.cloneNode(true); inst.volume=1.0; inst.play().catch(()=>{});}catch{} }
 document.addEventListener('click', (ev)=>{ if(ev.target.closest('button')) playClick(); }, {capture:true});
-
 const sonarSfx = new Audio('sonar-sound.mp3');
 
-/* MapTiler Geolocate control (GPS) */
+/* ====================== GPS CONTROLS ====================== */
+/* MapTiler geolocate control on TOP-RIGHT (button is hidden via CSS, but events still fire) */
 const geolocate = new maptilersdk.GeolocateControl({
   positionOptions: { enableHighAccuracy: true },
   trackUserLocation: true,
   showUserHeading: true
 });
-mapgl.addControl(geolocate, 'top-left');
+mapgl.addControl(geolocate, 'top-right');
+
+/* Insert our own GREEN browser GPS button just below MapTiler's controls */
+let customGeoAdded = false;   // guard to avoid duplicates after style changes
+glReady(()=>{
+  if (customGeoAdded) return;
+  customGeoAdded = true;
+
+  const host = mapgl.getContainer().querySelector('.maplibregl-ctrl-top-right') || mapgl.getContainer();
+  const wrap = document.createElement('div'); wrap.className='maplibregl-ctrl maplibregl-ctrl-group custom-geo-ctrl';
+  const btn  = document.createElement('button'); btn.className='custom-geo-btn'; btn.title='Use device GPS';
+  btn.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">
+    <path fill="#22c55e" d="M12 8a4 4 0 1 1 0 8a4 4 0 0 1 0-8Zm8.94 3a1 1 0 0 1 0 2l-2.06.17a7.03 7.03 0 0 1-5.88 5.88L13 22a1 1 0 0 1-2 0l-.17 2.06a7.03 7.03 0 0 1 5.88 5.88L21 11z"/>
+  </svg>`;
+  wrap.appendChild(btn); host.prepend(wrap);
+
+  btn.addEventListener('click', ()=>{
+    startBrowserWatch(true);
+    try{ geolocate.trigger(); }catch{}
+  });
+});
 
 let lastUserPos = null; // [lng, lat]
 const sonarBtn = byId('sonar-btn');
 function updateSonarEnabled(){
-  if(lastUserPos){
-    sonarBtn.classList.remove('disabled');
-    sonarBtn.title = 'Activate Coin Sonar';
-  }else{
-    sonarBtn.classList.add('disabled');
-    sonarBtn.title = 'Turn on GPS (top-left) to use Sonar';
+  if(lastUserPos){ sonarBtn.classList.remove('disabled'); sonarBtn.title='Activate Coin Sonar'; }
+  else { sonarBtn.classList.add('disabled'); sonarBtn.title='Turn on GPS to use Sonar'; }
+}
+function onFix(e){
+  const lng = e?.coords?.longitude ?? e?.lng ?? e?.lngLat?.lng;
+  const lat = e?.coords?.latitude  ?? e?.lat ?? e?.lngLat?.lat;
+  if (typeof lng==='number' && typeof lat==='number'){
+    lastUserPos=[lng,lat]; updateSonarEnabled();
   }
 }
-geolocate.on('geolocate', (e)=>{
-  lastUserPos = [e.coords.longitude, e.coords.latitude];
-  updateSonarEnabled();
-});
+geolocate.on('geolocate', onFix);
+mapgl.on('geolocate', onFix);
 
-/* Sonar modal state */
+/* Browser-level watchPosition (works even if MapTiler control never fires) */
+let geoWatchId = null;
+function startBrowserWatch(forceOneShot=false){
+  if(!('geolocation' in navigator)) return;
+  if(geoWatchId===null){
+    geoWatchId = navigator.geolocation.watchPosition(
+      pos=>{ lastUserPos=[pos.coords.longitude,pos.coords.latitude]; updateSonarEnabled(); },
+      err=>{ console.warn('watchPosition error:', err); },
+      { enableHighAccuracy:true, maximumAge:5000, timeout:10000 }
+    );
+  }
+  if(forceOneShot){
+    navigator.geolocation.getCurrentPosition(
+      pos=>{ lastUserPos=[pos.coords.longitude,pos.coords.latitude]; updateSonarEnabled(); },
+      ()=>{}, { enableHighAccuracy:true, maximumAge:5000, timeout:5000 }
+    );
+  }
+}
+startBrowserWatch();
+
+/* ===== Sonar UI ===== */
 const sonarModal = byId('sonar-modal');
 const radiusSeg = byId('sonar-radius');
 const colorSeg  = byId('sonar-color');
@@ -843,48 +893,37 @@ const scanNow   = byId('scan-now');
 const scanWait  = byId('scan-wait');
 
 let sonarRadius = 50;
-let sonarColor  = 'red'; // 'red' | 'green'
+let sonarColor  = 'red';
 
 function openSonar(){ sonarModal.classList.add('visible'); }
 function closeSonar(){ sonarModal.classList.remove('visible'); scanWait.classList.remove('visible'); }
-
-sonarBtn.addEventListener('click', ()=>{
-  if(!lastUserPos){ alert('Please enable GPS using the target icon (top-left).'); return; }
-  openSonar();
-});
+sonarBtn.addEventListener('click', ()=>{ if(!lastUserPos){ alert('Please enable GPS first.'); return; } openSonar(); });
 sonarModal.addEventListener('click', (e)=>{ if(e.target === sonarModal) closeSonar(); });
+function setActiveChip(container, chip){ container.querySelectorAll('.chip').forEach(c=>c.classList.remove('active')); chip.classList.add('active'); }
+radiusSeg.addEventListener('click', (e)=>{ const btn=e.target.closest('.chip'); if(!btn) return; sonarRadius=parseInt(btn.dataset.radius,10)||50; setActiveChip(radiusSeg,btn); });
+colorSeg.addEventListener('click', (e)=>{ const btn=e.target.closest('.chip'); if(!btn) return; sonarColor=(btn.dataset.color==='green')?'green':'red'; setActiveChip(colorSeg,btn); });
 
-function setActiveChip(container, chip){
-  container.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));
-  chip.classList.add('active');
-}
-radiusSeg.addEventListener('click', (e)=>{
-  const btn=e.target.closest('.chip'); if(!btn) return;
-  sonarRadius = parseInt(btn.dataset.radius,10) || 50;
-  setActiveChip(radiusSeg, btn);
-});
-colorSeg.addEventListener('click', (e)=>{
-  const btn=e.target.closest('.chip'); if(!btn) return;
-  sonarColor = (btn.dataset.color==='green') ? 'green' : 'red';
-  setActiveChip(colorSeg, btn);
-});
-
-/* Utility: create a circle polygon in GeoJSON (WGS84) */
-function circleGeoJSON(lng, lat, radiusMeters, steps=64){
-  const coords=[];
-  const R = 6378137; // Earth radius (m)
-  const d = radiusMeters / R;
-  const latRad = lat * Math.PI/180;
+function circleGeoJSON(lng, lat, radiusMeters, steps=96){
+  const coords=[], R=6378137, d=radiusMeters/R, latRad=lat*Math.PI/180;
   for(let i=0;i<=steps;i++){
-    const brng = (i/steps)*2*Math.PI;
-    const lat2 = Math.asin(Math.sin(latRad)*Math.cos(d) + Math.cos(latRad)*Math.sin(d)*Math.cos(brng));
-    const lng2 = (lng*Math.PI/180) + Math.atan2(Math.sin(brng)*Math.sin(d)*Math.cos(latRad), Math.cos(d)-Math.sin(latRad)*Math.sin(lat2));
-    coords.push([ (lng2*180/Math.PI), (lat2*180/Math.PI) ]);
+    const brng=(i/steps)*2*Math.PI;
+    const lat2=Math.asin(Math.sin(latRad)*cos(d)+Math.cos(latRad)*sin(d)*Math.cos(brng));
   }
-  return { type:'Polygon', coordinates:[coords] };
 }
-
-/* Find or create the sonar layer entry */
+</script>
+<script>
+/* helper trig without Math pollution */
+const sin=Math.sin, cos=Math.cos, asin=Math.asin, atan2=Math.atan2, PI=Math.PI;
+function circleGeoJSON(lng, lat, radiusMeters, steps=96){
+  const coords=[], R=6378137, d=radiusMeters/R, latRad=lat*PI/180, lngRad=lng*PI/180;
+  for(let i=0;i<=steps;i++){
+    const brng=(i/steps)*2*PI;
+    const lat2=asin(sin(latRad)*cos(d)+cos(latRad)*sin(d)*cos(brng));
+    const lng2=lngRad+atan2(sin(brng)*sin(d)*cos(latRad),cos(d)-sin(latRad)*sin(lat2));
+    coords.push([lng2*180/PI, lat2*180/PI]);
+  }
+  return {type:'Polygon',coordinates:[coords]};
+}
 function getOrCreateSonarLayer(){
   let entry = layerList.find(l => l.name === 'Coin Sonar Scans');
   if(!entry){
@@ -896,57 +935,34 @@ function getOrCreateSonarLayer(){
   }
   return entry;
 }
-
-/* Add the circle feature to maps & UI */
 function addSonarCircle(centerLngLat, radius, color){
   const entry = getOrCreateSonarLayer();
-  const fid = featureSeq++;
+  const fid = `sonar-${clientId}-${Date.now()}-${Math.floor(Math.random()*1e6)}`;
   const hex = (color==='green') ? '#22c55e' : '#ef4444';
   const geom = circleGeoJSON(centerLngLat[0], centerLngLat[1], radius, 96);
   const name = `Sonar ${radius}m (${color.toUpperCase()}) @ ${new Date().toLocaleString()}`;
-  const props = {
-    fid, name, hidden:false,
-    _fill:hex, _fillOpacity:0.18, _stroke:hex, _strokeOpacity:0.9, _weight:2
-  };
+  const props = { fid, name, hidden:false, _gid:fid, _ts:Date.now(), _fill:hex, _fillOpacity:0.18, _stroke:hex, _strokeOpacity:0.9, _weight:2 };
   entry.data.features.push({ type:'Feature', geometry:geom, properties:props });
   entry.items.push({ fid, name, label:'•', visible:true });
-  refreshGroupBoth(entry);
-  renderLayers(); renderGroupsVisibility(); saveState();
-  // Optional: zoom to it
-  const b = bboxOfFeature({geometry:geom});
-  if(engine==='gl') mapgl.fitBounds(b,{padding:40,duration:500});
-  else mapleaf.fitBounds([[b[0][1],b[0][0]],[b[1][1],b[1][0]]],{padding:[40,40]});
+  refreshGroupBoth(entry); renderLayers(); renderGroupsVisibility(); saveState();
+  const b=bboxOfFeature({geometry:geom});
+  if(engine==='gl') mapgl.fitBounds(b,{padding:40,duration:500}); else mapleaf.fitBounds([[b[0][1],b[0][0]],[b[1][1],b[1][0]]],{padding:[40,40]});
 }
-
-/* Scan flow */
 scanNow.addEventListener('click', async ()=>{
-  if(!lastUserPos){ alert('GPS not ready. Tap the target icon (top-left) to enable.'); return; }
+  if(!lastUserPos){ alert('GPS not ready.'); return; }
   try{ sonarSfx.currentTime=0; sonarSfx.play(); }catch{}
-  scanWait.classList.add('visible');
-  scanNow.disabled = true;
-  // brief animation delay
+  scanWait.classList.add('visible'); scanNow.disabled=true;
   await new Promise(r=>setTimeout(r, 1000));
-  // Use the latest GPS
   addSonarCircle(lastUserPos, sonarRadius, sonarColor);
-  scanNow.disabled = false;
-  scanWait.classList.remove('visible');
-  closeSonar();
+  scanNow.disabled=false; scanWait.classList.remove('visible'); closeSonar();
 });
 
 /* ================= Startup ================= */
 window.addEventListener('DOMContentLoaded', async ()=>{
-  // BGM: attempt autoplay, fall back to first user gesture if blocked
-  bgm.play().catch(()=>{
-    const resume = ()=>{ bgm.play().catch(()=>{}); document.removeEventListener('click', resume, {capture:true}); };
-    document.addEventListener('click', resume, {capture:true, once:true});
-  });
-
-  // Optional: prefill server code from ?server=abc
+  bgm.play().catch(()=>{});
   const urlParams = new URLSearchParams(location.search);
   const preCode = urlParams.get('server') || '';
   if(preCode){ serverInput.value = preCode; }
-
-  // Show server modal on load (already visible by default)
   updateSonarEnabled();
 });
 
