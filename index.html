@@ -24,7 +24,6 @@
     :root{
       --panel:#0f1115; --panel-2:#12151b; --muted:#98a2b3; --text:#e5e7eb;
       --accent:#60a5fa; --border:#1f2430; --bg:#0b0d11; --chip:#1c212e; --side:380px;
-      --red:#ef4444; --green:#22c55e;
     }
     html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;}
     .app{position:relative;display:grid;grid-template-columns: var(--side) 1fr;height:100vh;transition:grid-template-columns .28s ease;}
@@ -78,49 +77,16 @@
 
     /* ---- Server Code Modal ---- */
     .modal{
-      position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;place-items:center;z-index:2000;
+      position:fixed;inset:0;background:rgba(0,0,0,.5);display:grid;place-items:center;z-index:2000;
     }
-    .modal.visible{display:grid;}
     .modal-card{
-      background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:16px;max-width:380px;width:92%;
+      background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:16px;max-width:360px;width:92%;
       box-shadow:0 12px 40px rgba(0,0,0,.5);
     }
     .modal-card h3{margin:0 0 8px 0;font-size:16px}
     .modal-row{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:8px}
     .modal small{color:var(--muted)}
     .modal .err{color:#f87171;font-weight:700;margin-top:6px;display:none}
-
-    /* ---- Floating Sonar Button ---- */
-    .sonar-btn{
-      position:fixed;right:16px;bottom:16px;z-index:1500;
-      width:64px;height:64px;border-radius:12px;background:#0e1420;
-      border:1px solid var(--border);box-shadow:0 8px 24px rgba(0,0,0,.35);
-      background-image:url('metal-sonar.png'); background-size:cover; background-position:center;
-      cursor:pointer;
-    }
-    .sonar-btn.disabled{opacity:.5;filter:grayscale(60%);pointer-events:none;cursor:not-allowed}
-
-    /* ---- Sonar Modal ---- */
-    .sonar-options{display:grid;gap:10px;margin-top:10px}
-    .seg{display:flex;gap:8px;flex-wrap:wrap}
-    .seg .chip{
-      padding:6px 10px;border:1px solid var(--border);border-radius:999px;background:var(--chip);cursor:pointer;font-weight:700
-    }
-    .seg .chip.active{outline:2px solid var(--accent)}
-    .seg .chip.red{background:rgba(239,68,68,.12);border-color:#5b1e1e}
-    .seg .chip.green{background:rgba(34,197,94,.12);border-color:#1b3e2a}
-    .scan-area{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
-    .scan-wait{display:none;gap:8px;align-items:center;color:var(--muted);font-weight:700}
-    .scan-wait.visible{display:flex}
-    .pulse{
-      width:10px;height:10px;border-radius:999px;background:var(--accent);box-shadow:0 0 0 0 rgba(96,165,250,.7);
-      animation:pulse 1s infinite;
-    }
-    @keyframes pulse{
-      0%{box-shadow:0 0 0 0 rgba(96,165,250,.7)}
-      70%{box-shadow:0 0 0 18px rgba(96,165,250,0)}
-      100%{box-shadow:0 0 0 0 rgba(96,165,250,0)}
-    }
   </style>
 </head>
 <body>
@@ -193,7 +159,7 @@
 </div>
 
 <!-- ===== Server Code Modal ===== -->
-<div id="server-modal" class="modal visible">
+<div id="server-modal" class="modal" style="display:grid">
   <div class="modal-card">
     <h3>Join a server</h3>
     <small>Enter your shared <strong>Server Code</strong> to sync with others.</small>
@@ -205,41 +171,6 @@
     <div id="server-error" class="err"></div>
   </div>
 </div>
-
-<!-- ===== Sonar Modal ===== -->
-<div id="sonar-modal" class="modal">
-  <div class="modal-card">
-    <h3>Activate Coin Sonar</h3>
-    <div class="hint">Choose radius and color, then scan from your current GPS.</div>
-
-    <div class="sonar-options">
-      <div>
-        <div class="hint" style="margin-bottom:4px;">Radius</div>
-        <div class="seg" id="sonar-radius">
-          <button class="chip" data-radius="25">25 m</button>
-          <button class="chip active" data-radius="50">50 m</button>
-          <button class="chip" data-radius="100">100 m</button>
-        </div>
-      </div>
-
-      <div>
-        <div class="hint" style="margin-bottom:4px;">Color</div>
-        <div class="seg" id="sonar-color">
-          <button class="chip red active" data-color="red">RED</button>
-          <button class="chip green" data-color="green">GREEN</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="scan-area">
-      <div id="scan-wait" class="scan-wait"><span class="pulse"></span> Scanning…</div>
-      <button id="scan-now" class="btn">SCAN NOW</button>
-    </div>
-  </div>
-</div>
-
-<!-- Floating Sonar Button -->
-<button id="sonar-btn" class="sonar-btn disabled" title="Turn on GPS (top-left) to use Sonar"></button>
 
 <script>
 /* ================= Map engines ================= */
@@ -749,7 +680,7 @@ function subscribeRoom(code){
         }
       }
     )
-    .subscribe((status)=>{ /* optional */ });
+    .subscribe((status)=>{ /* optional: console.log('Realtime', status); */ });
 }
 
 /* Join/create a room, load state or seed with preload */
@@ -764,6 +695,9 @@ async function joinRoom(code){
       clearAllLayers();
       let seeded=false;
       try { await loadKMZFromUrl(encodeURI(PRELOAD_GEOHASHES), 'Geohashes'); seeded=true; } catch(e){ console.warn('Preload geohashes failed', e); }
+      if(!seeded){
+        // still allow joining even if preload assets unavailable
+      }
       for (const name of PRELOAD_COINS){
         try { await loadKMZFromUrl(encodeURI(name)); console.log('Preloaded', name); break; }
         catch(e){ console.warn('Preload failed for', name); }
@@ -790,7 +724,7 @@ serverJoin.addEventListener('click', async ()=>{
   serverJoin.disabled=true; serverJoin.textContent='Joining...';
   try{
     await joinRoom(code);
-    modal.classList.remove('visible');
+    modal.style.display='none';
   }catch(e){
     serverErr.textContent='Could not join. Check your connection and try again.';
     serverErr.style.display='block';
@@ -802,154 +736,15 @@ serverJoin.addEventListener('click', async ()=>{
 /* Allow Enter key */
 serverInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter') serverJoin.click(); });
 
-/* ====================== AUDIO + SONAR ====================== */
-/* Background music and SFX (files must exist beside index.html) */
-const bgm = new Audio('Evening Traveler - Road Trip.mp3'); bgm.volume = 0.3; bgm.loop = true;
-const clickSfxSrc = 'Button.mp3';
-function playClick(){ try{ const a = new Audio(clickSfxSrc); a.volume = 1.0; a.play(); }catch{} }
-document.addEventListener('click', (ev)=>{ if(ev.target.closest('button')) playClick(); }, {capture:true});
-
-const sonarSfx = new Audio('sonar-sound.mp3');
-
-/* MapTiler Geolocate control (GPS) */
-const geolocate = new maptilersdk.GeolocateControl({
-  positionOptions: { enableHighAccuracy: true },
-  trackUserLocation: true,
-  showUserHeading: true
-});
-mapgl.addControl(geolocate, 'top-left');
-
-let lastUserPos = null; // [lng, lat]
-const sonarBtn = byId('sonar-btn');
-function updateSonarEnabled(){
-  if(lastUserPos){
-    sonarBtn.classList.remove('disabled');
-    sonarBtn.title = 'Activate Coin Sonar';
-  }else{
-    sonarBtn.classList.add('disabled');
-    sonarBtn.title = 'Turn on GPS (top-left) to use Sonar';
-  }
-}
-geolocate.on('geolocate', (e)=>{
-  lastUserPos = [e.coords.longitude, e.coords.latitude];
-  updateSonarEnabled();
-});
-
-/* Sonar modal state */
-const sonarModal = byId('sonar-modal');
-const radiusSeg = byId('sonar-radius');
-const colorSeg  = byId('sonar-color');
-const scanNow   = byId('scan-now');
-const scanWait  = byId('scan-wait');
-
-let sonarRadius = 50;
-let sonarColor  = 'red'; // 'red' | 'green'
-
-function openSonar(){ sonarModal.classList.add('visible'); }
-function closeSonar(){ sonarModal.classList.remove('visible'); scanWait.classList.remove('visible'); }
-
-sonarBtn.addEventListener('click', ()=>{
-  if(!lastUserPos){ alert('Please enable GPS using the target icon (top-left).'); return; }
-  openSonar();
-});
-sonarModal.addEventListener('click', (e)=>{ if(e.target === sonarModal) closeSonar(); });
-
-function setActiveChip(container, chip){
-  container.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));
-  chip.classList.add('active');
-}
-radiusSeg.addEventListener('click', (e)=>{
-  const btn=e.target.closest('.chip'); if(!btn) return;
-  sonarRadius = parseInt(btn.dataset.radius,10) || 50;
-  setActiveChip(radiusSeg, btn);
-});
-colorSeg.addEventListener('click', (e)=>{
-  const btn=e.target.closest('.chip'); if(!btn) return;
-  sonarColor = (btn.dataset.color==='green') ? 'green' : 'red';
-  setActiveChip(colorSeg, btn);
-});
-
-/* Utility: create a circle polygon in GeoJSON (WGS84) */
-function circleGeoJSON(lng, lat, radiusMeters, steps=64){
-  const coords=[];
-  const R = 6378137; // Earth radius (m)
-  const d = radiusMeters / R;
-  const latRad = lat * Math.PI/180;
-  for(let i=0;i<=steps;i++){
-    const brng = (i/steps)*2*Math.PI;
-    const lat2 = Math.asin(Math.sin(latRad)*Math.cos(d) + Math.cos(latRad)*Math.sin(d)*Math.cos(brng));
-    const lng2 = (lng*Math.PI/180) + Math.atan2(Math.sin(brng)*Math.sin(d)*Math.cos(latRad), Math.cos(d)-Math.sin(latRad)*Math.sin(lat2));
-    coords.push([ (lng2*180/Math.PI), (lat2*180/Math.PI) ]);
-  }
-  return { type:'Polygon', coordinates:[coords] };
-}
-
-/* Find or create the sonar layer entry */
-function getOrCreateSonarLayer(){
-  let entry = layerList.find(l => l.name === 'Coin Sonar Scans');
-  if(!entry){
-    entry = { id:layerSeq++, name:'Coin Sonar Scans', visible:true, data:{type:'FeatureCollection',features:[]}, items:[], glSourceId:null, glLayerIds:[], lfGroup:null, lfLayers:null };
-    layerList.push(entry);
-    if(mapgl.isStyleLoaded && mapgl.isStyleLoaded()) createGroupOnGL(entry); else mapgl.once('load',()=>createGroupOnGL(entry));
-    createGroupOnLeaflet(entry);
-    renderGroupsVisibility(); renderLayers(); saveState();
-  }
-  return entry;
-}
-
-/* Add the circle feature to maps & UI */
-function addSonarCircle(centerLngLat, radius, color){
-  const entry = getOrCreateSonarLayer();
-  const fid = featureSeq++;
-  const hex = (color==='green') ? '#22c55e' : '#ef4444';
-  const geom = circleGeoJSON(centerLngLat[0], centerLngLat[1], radius, 96);
-  const name = `Sonar ${radius}m (${color.toUpperCase()}) @ ${new Date().toLocaleString()}`;
-  const props = {
-    fid, name, hidden:false,
-    _fill:hex, _fillOpacity:0.18, _stroke:hex, _strokeOpacity:0.9, _weight:2
-  };
-  entry.data.features.push({ type:'Feature', geometry:geom, properties:props });
-  entry.items.push({ fid, name, label:'•', visible:true });
-  refreshGroupBoth(entry);
-  renderLayers(); renderGroupsVisibility(); saveState();
-  // Optional: zoom to it
-  const b = bboxOfFeature({geometry:geom});
-  if(engine==='gl') mapgl.fitBounds(b,{padding:40,duration:500});
-  else mapleaf.fitBounds([[b[0][1],b[0][0]],[b[1][1],b[1][0]]],{padding:[40,40]});
-}
-
-/* Scan flow */
-scanNow.addEventListener('click', async ()=>{
-  if(!lastUserPos){ alert('GPS not ready. Tap the target icon (top-left) to enable.'); return; }
-  try{ sonarSfx.currentTime=0; sonarSfx.play(); }catch{}
-  scanWait.classList.add('visible');
-  scanNow.disabled = true;
-  // brief animation delay
-  await new Promise(r=>setTimeout(r, 1000));
-  // Use the latest GPS
-  addSonarCircle(lastUserPos, sonarRadius, sonarColor);
-  scanNow.disabled = false;
-  scanWait.classList.remove('visible');
-  closeSonar();
-});
-
 /* ================= Startup ================= */
 window.addEventListener('DOMContentLoaded', async ()=>{
-  // BGM: attempt autoplay, fall back to first user gesture if blocked
-  bgm.play().catch(()=>{
-    const resume = ()=>{ bgm.play().catch(()=>{}); document.removeEventListener('click', resume, {capture:true}); };
-    document.addEventListener('click', resume, {capture:true, once:true});
-  });
-
-  // Optional: prefill server code from ?server=abc
+  // Wait for user to choose a server code (no local restore here).
+  // Users can still export/import without a room, but we require a code to sync.
+  // Optional: prefill from URL ?server=abc
   const urlParams = new URLSearchParams(location.search);
   const preCode = urlParams.get('server') || '';
   if(preCode){ serverInput.value = preCode; }
-
-  // Show server modal on load (already visible by default)
-  updateSonarEnabled();
 });
-
 /* ================= Export KML / KMZ ================= */
 function escapeXml(s){return String(s).replace(/[<>&'"]/g,c=>({ '<':'&lt;','>':'&gt;','&':'&amp;',"'":'&apos;','"':'&quot;' }[c]));}
 function kmlColorFromCss(hex,opacity){ const h=(hex||'#0b57d0').replace('#',''); const r=parseInt(h.slice(0,2),16)||0, g=parseInt(h.slice(2,4),16)||0, b=parseInt(h.slice(4,6),16)||0; const a=Math.round((opacity==null?1:opacity)*255); const to2=x=>x.toString(16).padStart(2,'0'); return to2(a)+to2(b)+to2(g)+to2(r); }
