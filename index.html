@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Sqkii Coin Mapper</title>
+  <title>SQKII Mapper — MapTiler + OSM (dark)</title>
 
   <!-- MapTiler SDK (MapLibre) -->
   <script src="https://cdn.maptiler.com/maptiler-sdk-js/v3.6.1/maptiler-sdk.umd.min.js"></script>
@@ -24,7 +24,7 @@
     :root{
       --panel:#0f1115; --panel-2:#12151b; --muted:#98a2b3; --text:#e5e7eb;
       --accent:#60a5fa; --border:#1f2430; --bg:#0b0d11; --chip:#1c212e; --side:380px;
-      --red:#ef4444; --green:#22c55e;
+      --green:#22c55e;
     }
     html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;}
     .app{position:relative;display:grid;grid-template-columns: var(--side) 1fr;height:100vh;transition:grid-template-columns .28s ease;}
@@ -76,7 +76,7 @@
     .style-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:6px;}
     .style-actions .btn{padding:6px 10px;}
 
-    /* ---- Server Code Modal ---- */
+    /* ---- Modal ---- */
     .modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;place-items:center;z-index:2000;}
     .modal.visible{display:grid;}
     .modal-card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:16px;max-width:380px;width:92%;box-shadow:0 12px 40px rgba(0,0,0,.5);}
@@ -106,13 +106,14 @@
     .pulse{width:10px;height:10px;border-radius:999px;background:var(--accent);box-shadow:0 0 0 0 rgba(96,165,250,.7);animation:pulse 1s infinite;}
     @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(96,165,250,.7)}70%{box-shadow:0 0 0 18px rgba(96,165,250,0)}100%{box-shadow:0 0 0 0 rgba(96,165,250,0)}}
 
-    /* ---- Custom Browser GPS Button (green) ---- */
-    .custom-geo-ctrl{margin-top:8px;}
-    .custom-geo-ctrl .custom-geo-btn{
+    /* ---- Custom GPS + Edit control ---- */
+    .custom-ctrl-group{margin-top:8px;}
+    .custom-ctrl-group .ctrl-btn{
       width:32px;height:32px;display:grid;place-items:center;background:#fff;border:0;border-radius:2px;cursor:pointer;
       box-shadow:0 0 0 1px rgba(0,0,0,.1), 0 1px 2px rgba(0,0,0,.15);
     }
-    .custom-geo-ctrl .custom-geo-btn svg{width:18px;height:18px}
+    .custom-ctrl-group .ctrl-btn svg{width:18px;height:18px}
+    .ctrl-btn.active{outline:2px solid var(--green);outline-offset:-2px;}
   </style>
 </head>
 <body>
@@ -274,26 +275,12 @@ function readdAllGroupsAfterGLStyleChange(){
 
 /* ================= App state / utils ================= */
 let layerSeq = 1, featureSeq = 1;
-
-// ---- SAFE LAYER-ID ALLOCATOR (prevents group mixing on toggle) ----
 const usedLayerIds = new Set();
-function nextLayerId(){
-  if(!Number.isFinite(layerSeq)) layerSeq = 1;
-  while(usedLayerIds.has(layerSeq)) layerSeq += 1;
-  usedLayerIds.add(layerSeq);
-  return layerSeq++;
-}
-function adoptLayerId(maybeId){
-  const n = Number(maybeId);
-  if (Number.isFinite(n) && !usedLayerIds.has(n)) {
-    usedLayerIds.add(n);
-    if (n >= layerSeq) layerSeq = n + 1;
-    return n;
-  }
-  return nextLayerId();
-}
+function nextLayerId(){ if(!Number.isFinite(layerSeq)) layerSeq=1; while(usedLayerIds.has(layerSeq)) layerSeq+=1; usedLayerIds.add(layerSeq); return layerSeq++; }
+function adoptLayerId(maybeId){ const n=Number(maybeId); if(Number.isFinite(n) && !usedLayerIds.has(n)){ usedLayerIds.add(n); if(n>=layerSeq) layerSeq=n+1; return n; } return nextLayerId(); }
 
-const layerList=[]; // {id,name,visible,data,items,glSourceId,glLayerIds[],lfGroup,lfLayers:Map}
+const layerList=[];            // renderable layers
+const layerGraveyard=[];       // layer tombstones we must sync
 const byId=id=>document.getElementById(id);
 
 function kmlColorToCss(aabbggrr){ if(!aabbggrr){return{hex:'#0b57d0',opacity:0.2};} let s=aabbggrr.trim(); if(s.length===6) s='ff'+s; return {hex:'#'+s.slice(6,8)+s.slice(4,6)+s.slice(2,4), opacity:parseInt(s.slice(0,2),16)/255}; }
@@ -313,11 +300,7 @@ function buildPopupHTMLFromProps(props){
        + (safe ? '<div style="font-size:13px;line-height:1.35;color:#cbd5e1;font-weight:700;">'+safe+'</div>' : '')
        + '</div>';
 }
-function bboxOfFeature(f){
-  let minX= Infinity, minY= Infinity, maxX=-Infinity, maxY=-Infinity;
-  (function scan(c){ if(typeof c[0]==='number'){ const [x,y]=c; minX=Math.min(minX,x); minY=Math.min(minY,y); maxX=Math.max(maxX,x); maxY=Math.max(maxY,y);} else c.forEach(scan); })(f.geometry.coordinates);
-  return [[minX,minY],[maxX,maxY]];
-}
+function bboxOfFeature(f){ let minX= Infinity, minY= Infinity, maxX=-Infinity, maxY=-Infinity; (function scan(c){ if(typeof c[0]==='number'){ const [x,y]=c; minX=Math.min(minX,x); minY=Math.min(minY,y); maxX=Math.max(maxX,x); maxY=Math.max(maxY,y);} else c.forEach(scan); })(f.geometry.coordinates); return [[minX,minY],[maxX,maxY]]; }
 function panPopupIntoViewGL(lngLat,liftPx=180){ const p=mapgl.project(lngLat); p.y-=liftPx; const center=mapgl.unproject(p); mapgl.easeTo({center,duration:350}); }
 
 /* ========== helpers for filtered rendering (exclude deleted) ========== */
@@ -327,26 +310,10 @@ function filteredFeatureCollection(entry){
 
 /* ========== KMZ helpers ========== */
 function blobToDataUrl(blob){ return new Promise(res=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.readAsDataURL(blob); }); }
-async function buildKmzAssetMap(zip){
-  const out={};
-  for(const f of Object.values(zip.files)){
-    if(!f.dir && /\.(png|jpe?g|gif|svg)$/i.test(f.name)){
-      const blob=await f.async('blob');
-      out[f.name] = await blobToDataUrl(blob);
-    }
-  }
-  return out;
-}
+async function buildKmzAssetMap(zip){ const out={}; for(const f of Object.values(zip.files)){ if(!f.dir && /\.(png|jpe?g|gif|svg)$/i.test(f.name)){ const blob=await f.async('blob'); out[f.name] = await blobToDataUrl(blob); } } return out; }
 function resolveIconHref(href,opts){
-  if(!href) return '';
-  if(/^(https?:|data:)/i.test(href)) return href;
-  if(opts && opts.assetMap){
-    if(opts.assetMap[href]) return opts.assetMap[href];
-    const base=href.split(/[\\/]/).pop();
-    for(const k of Object.keys(opts.assetMap)){
-      if(k===base || k.endsWith('/'+base)) return opts.assetMap[k];
-    }
-  }
+  if(!href) return ''; if(/^(https?:|data:)/i.test(href)) return href;
+  if(opts && opts.assetMap){ if(opts.assetMap[href]) return opts.assetMap[href]; const base=href.split(/[\\/]/).pop(); for(const k of Object.keys(opts.assetMap)){ if(k===base || k.endsWith('/'+base)) return opts.assetMap[k]; } }
   if(opts && opts.baseUrl){ try{return new URL(href,opts.baseUrl).href;}catch(e){} }
   return href;
 }
@@ -357,11 +324,7 @@ function extractKmlMeta(xmlDoc,opts){
   xmlDoc.querySelectorAll('StyleMap[id], styleMap[id]').forEach(s=>smById[s.getAttribute('id')]=s);
   function resolveStyleUrl(url){
     if(!url) return null; const id=url.replace(/^#/,'');
-    const sm=smById[id]; if(sm){
-      for(const p of sm.querySelectorAll('Pair')) if((t(p,'key')||'').toLowerCase()==='normal'){
-        const su=t(p,'styleUrl'); if(su) return resolveStyleUrl(su);
-      }
-    }
+    const sm=smById[id]; if(sm){ for(const p of sm.querySelectorAll('Pair')) if((t(p,'key')||'').toLowerCase()==='normal'){ const su=t(p,'styleUrl'); if(su) return resolveStyleUrl(su); } }
     return styleById[id]||null;
   }
   function topFolderName(node){ let cur=node.parentNode,top=''; while(cur&&cur.nodeType===1){ if(/Folder/i.test(cur.tagName)){ const nm=t(cur,'name'); if(nm) top=nm; } cur=cur.parentNode; } return top||'Untitled layer'; }
@@ -506,14 +469,20 @@ function renderLayers(){
     const actions=document.createElement('div'); actions.className='actions';
     const renameBtn=document.createElement('button'); renameBtn.className='btn small'; renameBtn.textContent='Rename';
     renameBtn.onclick=()=>{ const nn=prompt('New layer name:', entry.name); if(!nn) return; entry.name=nn; renderGroupsVisibility(); renderLayers(); saveState(); };
+
     const delBtn=document.createElement('button'); delBtn.className='btn small'; delBtn.textContent='Delete';
-    delBtn.onclick=()=>{ if(!confirm('Delete this layer?')) return;
+    delBtn.onclick=()=>{ if(!confirm('Delete this layer for everyone?')) return;
+      // remove visuals
       (entry.glLayerIds||[]).forEach(id=>{ if(mapgl.getLayer(id)) try{mapgl.removeLayer(id);}catch{} });
       if(entry.glSourceId && mapgl.getSource(entry.glSourceId)) try{mapgl.removeSource(entry.glSourceId);}catch{};
       if(entry.lfGroup) try{entry.lfGroup.remove();}catch{};
+      // create a tombstone to sync deletion
+      layerGraveyard.push({ id: entry.id, name: entry.name, _deleted:true, _ts: Date.now() });
+      // remove from list
       const ix=layerList.findIndex(l=>l.id===entry.id); if(ix>=0) layerList.splice(ix,1);
       renderGroupsVisibility(); renderLayers(); saveState();
     };
+
     actions.append(renameBtn, delBtn);
     head.append(vis, ttl, actions); wrap.appendChild(head);
 
@@ -644,11 +613,24 @@ document.getElementById('basemap').addEventListener('change', (e)=>{
 const PRELOAD_GEOHASHES = 'geohashesGold.kmz';
 const PRELOAD_COINS = ['All Coin Records 2023-2024.kmz','All Coins Record 2023-2024.kmz','All Coins Records 2023-2024.kmz'];
 
-/* ===== Long-press style editor ===== */
+/* ===== Long-press style editor (Edit Mode aware) ===== */
 const editorEl=byId('style-editor');
 const seFill=byId('se-fill'), seFillOp=byId('se-fillop'), seOutline=byId('se-outline'), seStroke=byId('se-stroke'), seWidth=byId('se-width'), seClose=byId('se-close'), seDelete=byId('se-delete');
 let editCtx=null;
+let editingEnabled=false; // toggled by the new Edit Mode button
+
+function positionEditorAbove(screenX, screenY){
+  editorEl.style.display='block'; // to measure
+  const w = editorEl.offsetWidth || 260;
+  const h = editorEl.offsetHeight || 220;
+  const left = Math.min(Math.max(10, screenX - Math.floor(w/2)), window.innerWidth - w - 10);
+  const top  = Math.max(10, screenY - h - 12); // appear above the point
+  editorEl.style.left = left + 'px';
+  editorEl.style.top  = top + 'px';
+}
+
 function openStyleEditor(entry,fid,screenX,screenY){
+  if(!editingEnabled) return;
   editCtx={entry,fid};
   const f=entry.data.features.find(x=>x.properties.fid===fid); if(!f) return;
   const p=f.properties;
@@ -658,9 +640,8 @@ function openStyleEditor(entry,fid,screenX,screenY){
   seOutline.checked = strokeOn;
   seStroke.value = p._stroke || '#0b57d0';
   seWidth.value = p._weight ?? 2;
-  editorEl.style.left = Math.min(screenX+10, window.innerWidth-280)+'px';
-  editorEl.style.top  = Math.min(screenY+10, window.innerHeight-240)+'px';
-  editorEl.style.display='block';
+
+  positionEditorAbove(screenX, screenY);
 }
 function closeStyleEditor(){ editorEl.style.display='none'; editCtx=null; }
 function applyEditor(){
@@ -701,12 +682,13 @@ seDelete.addEventListener('click', ()=>{
   closeStyleEditor();
 });
 
-// Long-press threshold 0.85s
+// Long-press threshold 0.85s; only if editingEnabled
 const LONGPRESS_MS = 850;
 function attachLongPressGL(layerId, entry){
   let t=null;
   function clear(){ if(t){ clearTimeout(t); t=null; } }
   function start(e){
+    if(!editingEnabled) return;
     const feat=e.features && e.features[0]; if(!feat) return;
     const type=feat.geometry && feat.geometry.type;
     if(type!=='Polygon' && type!=='MultiPolygon') return;
@@ -718,6 +700,7 @@ function attachLongPressGL(layerId, entry){
   ['mouseup','mouseleave','drag','move','touchend','touchcancel'].forEach(ev=> mapgl.on(ev, clear));
 }
 function attachLongPressLeaf(ev, entry, fid){
+  if(!editingEnabled) return;
   let timer=null;
   function cancel(){ if(timer){ clearTimeout(timer); timer=null; } }
   timer=setTimeout(()=>{ const p=ev.originalEvent && ev.originalEvent.touches && ev.originalEvent.touches[0] ? ev.originalEvent.touches[0] : ev.originalEvent; openStyleEditor(entry,fid, p.clientX, p.clientY); }, LONGPRESS_MS);
@@ -728,8 +711,10 @@ document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeStyleEdito
 
 /* ================= Autosave / Restore (local) ================= */
 const LS_KEY='sqkii-mapper-state-v1';
-function shallowSerializableState(){ return layerList.map(l=>({ id:l.id, name:l.name, visible:l.visible!==false, data:l.data, items:l.items })); }
-/* saveState is overridden below to also sync to Supabase */
+function shallowSerializableState(){
+  // include both live layers and layer tombstones so deletions sync
+  return [...layerList.map(l=>({ id:l.id, name:l.name, visible:l.visible!==false, data:l.data, items:l.items })), ...layerGraveyard];
+}
 function localSaveOnly(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(shallowSerializableState())); }catch(e){ console.warn('Autosave failed',e); } }
 window.addEventListener('beforeunload', localSaveOnly);
 
@@ -751,16 +736,26 @@ function clearAllLayers(){
     if(entry.lfGroup) try{entry.lfGroup.remove();}catch{};
   }
   layerList.length = 0;
+  layerGraveyard.length = 0;
   renderGroupsVisibility(); renderLayers();
 }
 async function applyStateArray(arr){
-  clearAllLayers();
-  await ensureAllIconsOnCurrentStyle();
+  // rebuild lists from serialized state array (layers + tombstones)
+  for(const entry of [...layerList]){ (entry.glLayerIds||[]).forEach(id=>{ if(mapgl.getLayer(id)) try{mapgl.removeLayer(id);}catch{} }); if(entry.glSourceId && mapgl.getSource(entry.glSourceId)) try{mapgl.removeSource(entry.glSourceId);}catch{}; if(entry.lfGroup) try{entry.lfGroup.remove();}catch{}; }
+  layerList.length = 0;
+  layerGraveyard.length = 0;
 
+  await ensureAllIconsOnCurrentStyle();
   usedLayerIds.clear();
   if (!Array.isArray(arr)) arr = [];
 
   for (const saved of arr){
+    if (saved && saved._deleted){
+      layerGraveyard.push({ id:saved.id, name:saved.name, _deleted:true, _ts:saved._ts||0 });
+      // do not render tombstone
+      usedLayerIds.add(Number(saved.id));
+      continue;
+    }
     const safeId = adoptLayerId(saved?.id);
     const entry = {
       id: safeId,
@@ -785,7 +780,7 @@ async function applyStateArray(arr){
     createGroupOnLeaflet(entry);
   }
 
-  const numericIds = layerList.map(l => Number(l.id)).filter(Number.isFinite);
+  const numericIds = layerList.map(l => Number(l.id)).concat(layerGraveyard.map(g=>Number(g.id))).filter(Number.isFinite);
   layerSeq = (numericIds.length ? Math.max(...numericIds) : 0) + 1;
 
   const allFids = layerList.flatMap(l => (l.data?.features||[]).map(f => Number(f?.properties?.fid)));
@@ -813,22 +808,16 @@ async function fetchRoom(code){
   return data;
 }
 
-/* ---- MERGING: prefer newest _ts; deletions carried via _deleted tombstones ---- */
-async function upsertRoomState(code, state){
-  const remote = await fetchRoom(code).catch(()=>null);
-  const remoteState = (remote && Array.isArray(remote.state)) ? remote.state : [];
-  const merged = mergeStates(remoteState, state);
-  const { error } = await supabase.from('rooms').upsert({
-    code,
-    state: merged,
-    updated_by: clientId,
-    updated_at: new Date().toISOString()
-  }, { onConflict:'code' });
-  if(error) throw error;
-}
+/* ---- MERGING ---- */
 function featureKey(f){ const p=f&&f.properties||{}; return String(p._gid ?? p.fid ?? ''); }
 function newerFeature(a,b){ const ta=a?.properties?._ts ?? 0; const tb=b?.properties?._ts ?? 0; return (tb>ta)?b:a; }
+function newerLayer(a,b){ const ta=a?._ts ?? 0; const tb=b?._ts ?? 0; return (tb>ta)?b:a; }
+
 function mergeLayer(remoteL, localL){
+  // handle tombstones
+  if(remoteL?._deleted || localL?._deleted){
+    return newerLayer(remoteL, localL); // keep the newest one (likely a tombstone)
+  }
   if(!remoteL) return localL; if(!localL) return remoteL;
   const out={ id:remoteL.id??localL.id, name:remoteL.name??localL.name, visible:(localL.visible!==false)||(remoteL.visible!==false),
     data:{type:'FeatureCollection',features:[]}, items:[], glSourceId:null, glLayerIds:[], lfGroup:null, lfLayers:null };
@@ -841,15 +830,28 @@ function mergeLayer(remoteL, localL){
     .map(f=>({ fid:f.properties?.fid, name:f.properties?.name||'Feature', label:(f.geometry?.type==='Point')?(f.properties?._label||'•'):'•', visible:!(f.properties?.hidden) }));
   return out;
 }
-function layerKey(L){
-  if (L && L.id != null) return 'id:'+String(L.id);
-  return 'name:'+(L?.name || '');
-}
+function layerKey(L){ return (L && L.id!=null) ? 'id:'+String(L.id) : 'name:'+(L?.name||''); }
 function mergeStates(remoteArr, localArr){
   const out=new Map();
   for(const L of (remoteArr||[])) out.set(layerKey(L), L);
-  for(const L of (localArr||[])){ const k=layerKey(L); out.set(k, out.has(k)?mergeLayer(out.get(k),L):L); }
+  for(const L of (localArr||[])){
+    const k=layerKey(L);
+    out.set(k, out.has(k)?mergeLayer(out.get(k),L):L);
+  }
   return [...out.values()];
+}
+
+async function upsertRoomState(code, state){
+  const remote = await fetchRoom(code).catch(()=>null);
+  const remoteState = (remote && Array.isArray(remote.state)) ? remote.state : [];
+  const merged = mergeStates(remoteState, state);
+  const { error } = await supabase.from('rooms').upsert({
+    code,
+    state: merged,
+    updated_by: clientId,
+    updated_at: new Date().toISOString()
+  }, { onConflict:'code' });
+  if(error) throw error;
 }
 
 let suppressNextRemoteApply = false;
@@ -894,7 +896,8 @@ async function joinRoom(code){
     if(existing && existing.state && existing.state.length){
       await applyStateArray(existing.state);
     }else{
-      clearAllLayers();
+      // fresh room: start blank or preload
+      layerList.length = 0; layerGraveyard.length = 0;
       let seeded=false;
       try { await loadKMZFromUrl(encodeURI(PRELOAD_GEOHASHES), 'Geohashes'); seeded=true; } catch(e){ console.warn('Preload geohashes failed', e); }
       if(!seeded){ /* ok */ }
@@ -941,11 +944,11 @@ document.getElementById('server-continue').addEventListener('click', ()=>{
 /* ====================== AUDIO + SFX ====================== */
 const bgm = new Audio('Evening Traveler - Road Trip.mp3'); bgm.volume = 0.5; bgm.loop = true;
 
-// --- Low-latency button sound via WebAudio (with fallback) ---
+// Low-latency button sound via WebAudio (lowercase button.mp3)
 let audioCtx = null, buttonBuffer = null, fetchedButtonAb = null;
-fetch('Button.mp3').then(r=> r.ok ? r.arrayBuffer() : Promise.reject()).then(ab=>{ fetchedButtonAb = ab; }).catch(()=>{ /* fallback only */ });
+fetch('button.mp3').then(r=> r.ok ? r.arrayBuffer() : Promise.reject()).then(ab=>{ fetchedButtonAb = ab; }).catch(()=>{ /* fallback only */ });
+const htmlClick = new Audio('button.mp3'); htmlClick.preload = 'auto';
 
-const htmlClick = new Audio('Button.mp3'); htmlClick.preload = 'auto';
 function playClick(){
   if (buttonBuffer && audioCtx) {
     try{
@@ -960,9 +963,7 @@ function playClick(){
 }
 
 function unlockAudio(){
-  // Start BGM
   bgm.play().catch(()=>{});
-  // Init WebAudio and decode pre-fetched click
   try{
     audioCtx = audioCtx || new (window.AudioContext||window.webkitAudioContext)();
     if (fetchedButtonAb && !buttonBuffer){
@@ -979,7 +980,7 @@ const sonarSfx = new Audio('sonar-sound.mp3');
 /* Play click whenever any <button> is clicked */
 document.addEventListener('click', (ev)=>{ if(ev.target.closest('button')) playClick(); }, {capture:true});
 
-/* ====================== GPS CONTROLS ====================== */
+/* ====================== GPS + EDIT CONTROLS ====================== */
 const geolocate = new maptilersdk.GeolocateControl({
   positionOptions: { enableHighAccuracy: true },
   trackUserLocation: true,
@@ -987,24 +988,30 @@ const geolocate = new maptilersdk.GeolocateControl({
 });
 mapgl.addControl(geolocate, 'top-right');
 
-/* Insert our own GREEN browser GPS button just below MapTiler's controls */
-let customGeoAdded = false;
+/* Add green GPS + Edit Mode below MapTiler controls */
+let customCtrlsAdded = false;
 glReady(()=>{
-  if (customGeoAdded) return;
-  customGeoAdded = true;
+  if (customCtrlsAdded) return;
+  customCtrlsAdded = true;
 
   const host = mapgl.getContainer().querySelector('.maplibregl-ctrl-top-right') || mapgl.getContainer();
-  const wrap = document.createElement('div'); wrap.className='maplibregl-ctrl maplibregl-ctrl-group custom-geo-ctrl';
-  const btn  = document.createElement('button'); btn.className='custom-geo-btn'; btn.title='Use device GPS';
-  btn.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">
-    <path fill="#22c55e" d="M12 8a4 4 0 1 1 0 8a4 4 0 0 1 0-8Zm0-7a1 1 0 0 1 1 1v2.06a7.03 7.03 0 0 1 5.88 5.88H21a1 1 0 1 1 0 2h-2.12a7.03 7.03 0 0 1-5.88 5.88V22a1 1 0 1 1-2 0v-2.12A7.03 7.03 0 0 1 5.12 12H3a1 1 0 1 1 0-2h2.12A7.03 7.03 0 0 1 11 4.06V2a1 1 0 0 1 1-1z"/>
-  </svg>`;
-  wrap.appendChild(btn); host.appendChild(wrap);
+  const wrap = document.createElement('div'); wrap.className='maplibregl-ctrl maplibregl-ctrl-group custom-ctrl-group';
 
-  btn.addEventListener('click', ()=>{
-    startBrowserWatch(true);
-    try{ geolocate.trigger(); }catch{}
-  });
+  // GPS button
+  const gpsBtn  = document.createElement('button'); gpsBtn.className='ctrl-btn'; gpsBtn.title='Use device GPS';
+  gpsBtn.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#22c55e" d="M12 8a4 4 0 1 1 0 8a4 4 0 0 1 0-8Zm0-7a1 1 0 0 1 1 1v2.06a7.03 7.03 0 0 1 5.88 5.88H21a1 1 0 1 1 0 2h-2.12a7.03 7.03 0 0 1-5.88 5.88V22a1 1 0 1 1-2 0v-2.12A7.03 7.03 0 0 1 5.12 12H3a1 1 0 1 1 0-2h2.12A7.03 7.03 0 0 1 11 4.06V2a1 1 0 0 1 1-1z"/></svg>`;
+  gpsBtn.addEventListener('click', ()=>{ startBrowserWatch(true); try{ geolocate.trigger(); }catch{} });
+
+  // Edit Mode toggle (pencil)
+  const editBtn = document.createElement('button'); editBtn.className='ctrl-btn'; editBtn.title='Toggle Edit Mode';
+  editBtn.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1.003 1.003 0 0 0 0-1.42l-2.34-2.34a1.003 1.003 0 0 0-1.42 0L14.13 4.1l3.75 3.75 2.83-2.81z"/></svg>`;
+  function setEdit(v){ editingEnabled=v; editBtn.classList.toggle('active', v); if(!v) closeStyleEditor(); }
+  editBtn.addEventListener('click', ()=> setEdit(!editingEnabled));
+  setEdit(false); // default OFF
+
+  wrap.appendChild(gpsBtn);
+  wrap.appendChild(editBtn);
+  host.appendChild(wrap);
 });
 
 let lastUserPos = null; // [lng, lat]
