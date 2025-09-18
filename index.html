@@ -100,19 +100,8 @@
       gap:14px;
       align-items:start;
     }
-    .mapstyle-right{
-      color:var(--muted);
-      font-size:12px;
-      text-align:right;
-      line-height:1.35;
-      max-width:240px;
-      padding-top:2px;
-    }
-    .mapstyle-left .label{
-      color:var(--muted);
-      font-size:12px;
-      margin-bottom:4px;
-    }
+    .mapstyle-right{ color:var(--muted); font-size:12px; text-align:right; line-height:1.35; max-width:240px; padding-top:2px; }
+    .mapstyle-left .label{ color:var(--muted); font-size:12px; margin-bottom:4px; }
 
     /* Bigger white close button that sits just outside the popup corner */
     .maplibregl-popup-close-button{
@@ -121,8 +110,6 @@
       border:none; box-shadow:0 2px 6px rgba(0,0,0,.35); text-shadow:none; opacity:1; z-index:2;
     }
     .maplibregl-popup-close-button:hover{ filter:brightness(1.15); }
-
-    /* Leaflet */
     .leaflet-popup-close-button{
       position:absolute; top:-8px; right:-8px; color:#fff !important; font-size:22px;
       width:28px; height:28px; line-height:28px; background:rgba(0,0,0,.55); border-radius:50%;
@@ -151,9 +138,9 @@
     .pulse{width:10px;height:10px;border-radius:999px;background:var(--accent);box-shadow:0 0 0 0 rgba(96,165,250,.7);animation:pulse 1s infinite;}
     @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(96,165,250,.7)}70%{box-shadow:0 0 0 18px rgba(96,165,250,0)}100%{box-shadow:0 0 0 0 rgba(96,165,250,0)}}
 
-    /* ---- Custom control group (GPS + Edit) ---- */
-    .custom-ctrl-group{margin-top:8px; order: 999;} /* force below zoom/compass */
-    .maplibregl-ctrl-top-right{display:flex;flex-direction:column;gap:6px;} /* ensure vertical stack */
+    /* ---- Controls layout: keep custom group at bottom ---- */
+    .maplibregl-ctrl-top-right{display:flex;flex-direction:column;gap:6px;}
+    .custom-ctrl-group{margin-top:8px; order: 999;}
     .custom-ctrl-group .ctrl-btn{
       width:32px;height:32px;display:grid;place-items:center;background:#fff;border:0;border-radius:2px;cursor:pointer;
       box-shadow:0 0 0 1px rgba(0,0,0,.1), 0 1px 2px rgba(0,0,0,.15);
@@ -162,10 +149,6 @@
     .ctrl-btn.blue{background:var(--blue);}
     .ctrl-btn.blue img{width:18px;height:18px;display:block;filter:invert(1) brightness(10);}
     .ctrl-btn.edit.active{outline:2px solid var(--accent);}
-    .maplibregl-ctrl-top-right{display:flex;flex-direction:column;gap:6px;}
-    .maplibregl-ctrl-top-right > .maplibregl-ctrl-geolocate{order:2;} /* under zoom/compass */
-    .custom-ctrl-group{order:999;}                                   /* keep your GPS/Edit below */
-
 
     /* Audio toggle icon btn */
     .icon-btn{display:inline-grid;place-items:center;width:30px;height:30px;border:1px solid var(--border);border-radius:8px;background:var(--panel-2);cursor:pointer}
@@ -182,7 +165,6 @@
         Sqkii Mapper
         <!-- Audio toggle -->
         <button id="audio-toggle" class="icon-btn" title="Audio on/off">
-          <!-- speaker with waves (on by default) -->
           <svg viewBox="0 0 24 24" fill="none" stroke="#e5e7eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
             <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
@@ -349,10 +331,13 @@ function readdAllGroupsAfterGLStyleChange(){
     await ensureAllIconsOnCurrentStyle();
     layerList.forEach(e=>{ createGroupOnGL(e,true); if(e.visible===false && e.glLayerIds){ e.glLayerIds.forEach(lid=>{ if(mapgl.getLayer(lid)) mapgl.setLayoutProperty(lid,'visibility','none'); }); }});
     renderLayers(); renderGroupsVisibility();
-    // ensure controls order persists after style swap
+
+    // reattach geolocate AFTER style swap, and reinsert custom controls
+    ensureGeolocateControl();
     addCustomControls(true);
   })(); }
-  mapgl.once('load', hydrate); mapgl.once('idle', hydrate);
+  mapgl.once('load', hydrate);
+  mapgl.once('idle', hydrate);
 }
 
 /* ================= App state / utils ================= */
@@ -709,12 +694,11 @@ const editorEl=byId('style-editor');
 const seFill=byId('se-fill'), seFillOp=byId('se-fillop'), seOutline=byId('se-outline'), seStroke=byId('se-stroke'), seWidth=byId('se-width'), seClose=byId('se-close'), seDelete=byId('se-delete');
 let editCtx=null, editingEnabled=false;
 
-/* FIX: ensure editCtx is set so Apply/Delete works for circles and any polygon */
 function openStyleEditor(entry,fid,screenX,screenY){
   if(!editingEnabled) return;
   const f=entry.data.features.find(x=>x.properties.fid===fid); if(!f) return;
   const p=f.properties;
-  editCtx = { entry, fid }; /* <=== IMPORTANT FIX */
+  editCtx = { entry, fid }; // ensure subsequent Apply/Delete target the right feature
 
   seFill.value = p._fill || '#0b57d0';
   seFillOp.value = (p._fillOpacity ?? 0.2);
@@ -745,7 +729,6 @@ function applyEditor(){
 [seFill,seFillOp,seOutline,seStroke,seWidth].forEach(inp=> inp.addEventListener('input', applyEditor));
 seClose.addEventListener('click', closeStyleEditor);
 
-/* Delete (works for circles now because editCtx is set) */
 seDelete.addEventListener('click', ()=>{
   if(!editCtx) return;
   const {entry,fid}=editCtx;
@@ -943,8 +926,7 @@ async function joinRoom(code){
       await applyStateArray(existing.state);
     }else{
       clearAllLayers();
-      let seeded=false;
-      try { await loadKMZFromUrl(encodeURI(PRELOAD_GEOHASHES), 'Geohashes'); seeded=true; } catch(e){ console.warn('Preload geohashes failed', e); }
+      try { await loadKMZFromUrl(encodeURI(PRELOAD_GEOHASHES), 'Geohashes'); } catch(e){ console.warn('Preload geohashes failed', e); }
       for (const name of PRELOAD_COINS){
         try { await loadKMZFromUrl(encodeURI(name)); console.log('Preloaded', name); break; }
         catch(e){ console.warn('Preload failed for', name); }
@@ -990,10 +972,8 @@ document.getElementById('server-continue').addEventListener('click', ()=>{
 /* ====================== AUDIO + SFX ====================== */
 let audioEnabled = true;
 const bgm = new Audio('Evening Traveler - Road Trip.mp3'); bgm.volume = 0.30; bgm.loop = true;
-// Pause music when tab hidden
 document.addEventListener('visibilitychange', ()=>{ if(document.hidden) bgm.pause(); else if(audioEnabled) bgm.play().catch(()=>{}); });
 
-// WebAudio for instant button sound (eager decode)
 let audioCtx = null, buttonBuffer = null;
 const btnFallbackAudio = new Audio('button.mp3'); btnFallbackAudio.preload = 'auto';
 
@@ -1013,9 +993,7 @@ const btnFallbackAudio = new Audio('button.mp3'); btnFallbackAudio.preload = 'au
   }catch(e){ console.warn('button.mp3 preload failed', e); }
 })();
 
-function ensureAudioCtxResumed(){
-  try{ if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); }catch{}
-}
+function ensureAudioCtxResumed(){ try{ if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); }catch{} }
 function playClick(){
   try{
     if(!audioEnabled) return;
@@ -1026,7 +1004,7 @@ function playClick(){
       btnFallbackAudio.currentTime = 0;
       btnFallbackAudio.play().catch(()=>{});
     }
-  }catch(e){ /* swallow */ }
+  }catch(e){}
 }
 document.addEventListener('pointerdown', ()=>{
   ensureAudioCtxResumed();
@@ -1050,27 +1028,30 @@ document.addEventListener('click', (ev)=>{ if(ev.target.closest('button')) playC
 
 const sonarSfx = new Audio('sonar-sound.mp3');
 
-/* ====================== GPS CONTROLS (robust) ====================== */
+/* ====================== GPS CONTROLS (single instance, robust) ====================== */
 let geolocate = null;
-function ensureGeolocateControl(){
-  try{
-    if(geolocate){ mapgl.removeControl(geolocate); geolocate=null; }
-  }catch{}
+function ensureGeolocateControl() {
+  // clean up any stray DOM (prevents duplicates after style swaps)
+  document.querySelectorAll('.maplibregl-ctrl-geolocate').forEach(el => {
+    if (!el.closest('.maplibregl-ctrl-top-right')) return;
+    try { el.remove(); } catch {}
+  });
+
+  try{ if(geolocate){ mapgl.removeControl(geolocate); } }catch{}
   geolocate = new maptilersdk.GeolocateControl({
     positionOptions: { enableHighAccuracy: true },
     trackUserLocation: true,
+    showUserLocation: true,  // ensure the blue puck appears
     showUserHeading: true
   });
   mapgl.addControl(geolocate, 'top-right');
 
   geolocate.on('geolocate', onFix);
-  geolocate.on('trackuserlocationstart', ()=> trackingOn=true);
-  geolocate.on('trackuserlocationend', ()=> trackingOn=false);
+  geolocate.on('error', (e)=> console.warn('Geolocate error:', e));
 }
 ensureGeolocateControl();
 
 let lastUserPos = null; // [lng, lat]
-let trackingOn = false;
 const sonarBtn = byId('sonar-btn');
 function updateSonarEnabled(){
   if(lastUserPos){ sonarBtn.classList.remove('disabled'); sonarBtn.title='Activate Coin Sonar'; }
@@ -1097,17 +1078,15 @@ function addCustomControls(forceReattach=false){
   }
 
   const wrap = document.createElement('div'); wrap.className='maplibregl-ctrl maplibregl-ctrl-group custom-ctrl-group';
-  wrap.style.order = '999'; // ensure at bottom
+  wrap.style.order = '999'; // keep at bottom
 
   const gpsBtn  = document.createElement('button'); gpsBtn.className='ctrl-btn blue'; gpsBtn.title='Use device GPS';
   const gpsImg = document.createElement('img'); gpsImg.src='gps-on.png'; gpsImg.alt='GPS';
   gpsBtn.appendChild(gpsImg);
   gpsBtn.addEventListener('click', ()=>{
-    // Robust re-trigger: re-add control if something glitched (e.g. after style swaps)
-    ensureGeolocateControl();
-    try{ geolocate.trigger(); }catch{}
-    // One-shot browser fix to refresh lastUserPos + blue puck visibility
-    startBrowserWatch(true);
+    try { geolocate && geolocate.trigger(); } catch {}
+    setTimeout(()=>{ try { geolocate && geolocate.trigger(); } catch {} }, 500); // kick stubborn mobiles
+    startBrowserWatch(true); // keep Sonar in sync
   });
 
   const editBtn = document.createElement('button'); editBtn.className='ctrl-btn edit'; editBtn.title='Toggle Edit Mode';
@@ -1115,19 +1094,9 @@ function addCustomControls(forceReattach=false){
   editBtn.addEventListener('click', ()=>{ editingEnabled = !editingEnabled; editBtn.classList.toggle('active', editingEnabled); if(!editingEnabled) closeStyleEditor(); });
 
   wrap.append(gpsBtn, editBtn);
-
-  // Append AFTER MapTiler's controls reliably
-  const place = ()=>{
-    container.appendChild(wrap);
-  };
-  // If MapTiler adds controls slightly later, observe then append
-  const mo = new MutationObserver(()=> place());
-  place();
-  setTimeout(()=>{ try{ mo.disconnect(); }catch{} }, 1500);
+  container.appendChild(wrap);
 }
 mapgl.on('load', ()=> addCustomControls(true));
-mapgl.on('idle', ()=> addCustomControls());
-setTimeout(()=> addCustomControls(true), 1200);  // extra safety
 
 /* Browser-level watchPosition */
 let geoWatchId = null;
