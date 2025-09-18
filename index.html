@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>SQKII Mapper</title>
+  <title>Sqkii Mapper — MapTiler + OSM (dark)</title>
 
   <!-- MapTiler SDK (MapLibre) -->
   <script src="https://cdn.maptiler.com/maptiler-sdk-js/v3.6.1/maptiler-sdk.umd.min.js"></script>
@@ -152,7 +152,8 @@
     @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(96,165,250,.7)}70%{box-shadow:0 0 0 18px rgba(96,165,250,0)}100%{box-shadow:0 0 0 0 rgba(96,165,250,0)}}
 
     /* ---- Custom control group (GPS + Edit) ---- */
-    .custom-ctrl-group{margin-top:8px;}
+    .custom-ctrl-group{margin-top:8px; order: 999;} /* force below zoom/compass */
+    .maplibregl-ctrl-top-right{display:flex;flex-direction:column;gap:6px;} /* ensure vertical stack */
     .custom-ctrl-group .ctrl-btn{
       width:32px;height:32px;display:grid;place-items:center;background:#fff;border:0;border-radius:2px;cursor:pointer;
       box-shadow:0 0 0 1px rgba(0,0,0,.1), 0 1px 2px rgba(0,0,0,.15);
@@ -175,7 +176,7 @@
   <aside class="sidebar" id="sidebar">
     <div class="header">
       <div class="project-title">
-        SQKII MAPPER
+        Sqkii Mapper
         <!-- Audio toggle -->
         <button id="audio-toggle" class="icon-btn" title="Audio on/off">
           <!-- speaker with waves (on by default) -->
@@ -194,12 +195,12 @@
       <div class="mapstyle-left">
         <div class="label">Map style</div>
         <select id="basemap">
-          <option value="custom" selected>Sqkii Purple Map</option>
+          <option value="custom" selected>Sqkii Purple Map (custom)</option>
           <option value="streets">MapTiler Streets</option>
           <option value="dark">MapTiler Dark</option>
           <option value="outdoor">MapTiler Outdoor</option>
           <option value="satellite">MapTiler Satellite</option>
-          <option value="osm">OpenStreetMap</option>
+          <option value="osm">OpenStreetMap (raster)</option>
         </select>
       </div>
       <div class="mapstyle-right">
@@ -345,6 +346,8 @@ function readdAllGroupsAfterGLStyleChange(){
     await ensureAllIconsOnCurrentStyle();
     layerList.forEach(e=>{ createGroupOnGL(e,true); if(e.visible===false && e.glLayerIds){ e.glLayerIds.forEach(lid=>{ if(mapgl.getLayer(lid)) mapgl.setLayoutProperty(lid,'visibility','none'); }); }});
     renderLayers(); renderGroupsVisibility();
+    // ensure controls order persists after style swap
+    addCustomControls(true);
   })(); }
   mapgl.once('load', hydrate); mapgl.once('idle', hydrate);
 }
@@ -648,7 +651,7 @@ function getOrCreateLayerByName(name){
 }
 function addCircleToLayer(centerLngLat, radius, color, layerName){
   const entry = getOrCreateLayerByName(layerName);
-  const fid = featureSeq++; // numeric, avoids mixing with string IDs
+  const fid = featureSeq++; // numeric ID so editor/delete works consistently
   const hex = (color==='green') ? '#22c55e' : '#ef4444';
   const geom = circleGeoJSON(centerLngLat[0], centerLngLat[1], radius, 96);
   const name = `Circle ${radius}m (${color.toUpperCase()}) @ ${new Date().toLocaleString()}`;
@@ -694,7 +697,7 @@ document.getElementById('basemap').addEventListener('change', (e)=>{
   closeStyleEditor();
 });
 
-/* ===== Preload sequence ===== */
+/* ===== Preload sequence (optional assets) ===== */
 const PRELOAD_GEOHASHES = 'geohashesGold.kmz';
 const PRELOAD_COINS = ['All Coin Records 2023-2024.kmz','All Coins Record 2023-2024.kmz','All Coins Records 2023-2024.kmz'];
 
@@ -702,10 +705,14 @@ const PRELOAD_COINS = ['All Coin Records 2023-2024.kmz','All Coins Record 2023-2
 const editorEl=byId('style-editor');
 const seFill=byId('se-fill'), seFillOp=byId('se-fillop'), seOutline=byId('se-outline'), seStroke=byId('se-stroke'), seWidth=byId('se-width'), seClose=byId('se-close'), seDelete=byId('se-delete');
 let editCtx=null, editingEnabled=false;
+
+/* FIX: ensure editCtx is set so Apply/Delete works for circles and any polygon */
 function openStyleEditor(entry,fid,screenX,screenY){
   if(!editingEnabled) return;
   const f=entry.data.features.find(x=>x.properties.fid===fid); if(!f) return;
   const p=f.properties;
+  editCtx = { entry, fid }; /* <=== IMPORTANT FIX */
+
   seFill.value = p._fill || '#0b57d0';
   seFillOp.value = (p._fillOpacity ?? 0.2);
   const strokeOn = (p._strokeOpacity ?? 0.9) > 0 && (p._weight ?? 2) > 0;
@@ -735,6 +742,7 @@ function applyEditor(){
 [seFill,seFillOp,seOutline,seStroke,seWidth].forEach(inp=> inp.addEventListener('input', applyEditor));
 seClose.addEventListener('click', closeStyleEditor);
 
+/* Delete (works for circles now because editCtx is set) */
 seDelete.addEventListener('click', ()=>{
   if(!editCtx) return;
   const {entry,fid}=editCtx;
@@ -777,7 +785,8 @@ function attachLongPressLeaf(ev, entry, fid){
   if(!editingEnabled) return;
   let timer=null;
   function cancel(){ if(timer){ clearTimeout(timer); timer=null; } }
-  timer=setTimeout(()=>{ const p=ev.originalEvent && ev.originalEvent.touches && ev.originalEvent.touches[0] ? ev.originalEvent.touches[0] : ev.originalEvent; openStyleEditor(entry,fid, p.clientX, p.clientY); }, LONGPRESS_MS);
+  const src = ev.originalEvent && ev.originalEvent.touches && ev.originalEvent.touches[0] ? ev.originalEvent.touches[0] : ev.originalEvent;
+  timer=setTimeout(()=>{ const p=src; openStyleEditor(entry,fid, p.clientX, p.clientY); }, LONGPRESS_MS);
   document.addEventListener('mouseup', ()=>cancel(), {once:true});
   document.addEventListener('touchend', ()=>cancel(), {once:true});
 }
@@ -823,7 +832,6 @@ async function applyStateArray(arr){
       if(entry.lfGroup) mapleaf.removeLayer(entry.lfGroup);
     }
   }
-  // >>> FIX: only consider numeric fids for featureSeq <<<
   const allNumericFids = layerList.flatMap(l => (l.data?.features||[]).map(f => Number(f.properties?.fid)||0));
   featureSeq = Math.max(0, ...allNumericFids, 0) + 1;
   layerSeq = Math.max( ...layerList.map(l=>Number(l.id)||0), 0 ) + 1;
@@ -991,10 +999,8 @@ const btnFallbackAudio = new Audio('button.mp3'); btnFallbackAudio.preload = 'au
     const res = await fetch('button.mp3', { cache:'force-cache' });
     const ab = await res.arrayBuffer();
     audioCtx = audioCtx || new (window.AudioContext||window.webkitAudioContext)();
-    // decodeAudioData promise form (try/catch for Safari older)
     try {
       buttonBuffer = await new Promise((resolve,reject)=>{
-        // Safari sometimes needs callback form:
         const p = audioCtx.decodeAudioData(ab.slice(0), resolve, reject);
         if (p && typeof p.then === 'function') p.then(resolve).catch(reject);
       });
@@ -1014,20 +1020,17 @@ function playClick(){
     if(buttonBuffer && audioCtx){
       const src = audioCtx.createBufferSource(); src.buffer = buttonBuffer; src.connect(audioCtx.destination); src.start(0);
     }else{
-      // Fallback: HTMLAudio (still instant thanks to preload)
       btnFallbackAudio.currentTime = 0;
       btnFallbackAudio.play().catch(()=>{});
     }
   }catch(e){ /* swallow */ }
 }
-// Unlock audio on first interaction
 document.addEventListener('pointerdown', ()=>{
   ensureAudioCtxResumed();
   if(audioEnabled && !document.hidden){ bgm.play().catch(()=>{}); }
-  playClick(); // primes
+  playClick();
 },{once:true,capture:true});
 
-// Audio toggle button
 const audioBtn = document.getElementById('audio-toggle');
 function setAudioIcon(on){
   audioBtn.innerHTML = on
@@ -1040,21 +1043,31 @@ audioBtn.addEventListener('click', ()=>{
   setAudioIcon(audioEnabled);
   if(!audioEnabled) bgm.pause(); else if(!document.hidden) bgm.play().catch(()=>{});
 });
-// Global click sfx for buttons
 document.addEventListener('click', (ev)=>{ if(ev.target.closest('button')) playClick(); }, {capture:true});
 
-/* Sonar sound */
 const sonarSfx = new Audio('sonar-sound.mp3');
 
-/* ====================== GPS CONTROLS ====================== */
-const geolocate = new maptilersdk.GeolocateControl({
-  positionOptions: { enableHighAccuracy: true },
-  trackUserLocation: true,
-  showUserHeading: true
-});
-mapgl.addControl(geolocate, 'top-right');
+/* ====================== GPS CONTROLS (robust) ====================== */
+let geolocate = null;
+function ensureGeolocateControl(){
+  try{
+    if(geolocate){ mapgl.removeControl(geolocate); geolocate=null; }
+  }catch{}
+  geolocate = new maptilersdk.GeolocateControl({
+    positionOptions: { enableHighAccuracy: true },
+    trackUserLocation: true,
+    showUserHeading: true
+  });
+  mapgl.addControl(geolocate, 'top-right');
+
+  geolocate.on('geolocate', onFix);
+  geolocate.on('trackuserlocationstart', ()=> trackingOn=true);
+  geolocate.on('trackuserlocationend', ()=> trackingOn=false);
+}
+ensureGeolocateControl();
 
 let lastUserPos = null; // [lng, lat]
+let trackingOn = false;
 const sonarBtn = byId('sonar-btn');
 function updateSonarEnabled(){
   if(lastUserPos){ sonarBtn.classList.remove('disabled'); sonarBtn.title='Activate Coin Sonar'; }
@@ -1067,30 +1080,51 @@ function onFix(e){
     lastUserPos=[lng,lat]; updateSonarEnabled();
   }
 }
-geolocate.on('geolocate', onFix);
-mapgl.on('geolocate', onFix);
 
-/* Custom control group: Blue GPS + Edit toggle (placed BELOW zoom/compass) */
-function addCustomControls(){
-  if (document.querySelector('.custom-ctrl-group')) return;
-  const host = mapgl.getContainer().querySelector('.maplibregl-ctrl-top-right') || mapgl.getContainer();
+/* Custom control group: Blue GPS + Edit toggle BELOW zoom/compass */
+function addCustomControls(forceReattach=false){
+  const container = mapgl.getContainer().querySelector('.maplibregl-ctrl-top-right') || mapgl.getContainer();
+  if(!container) return;
+
+  if(forceReattach){
+    const old = container.querySelector('.custom-ctrl-group');
+    if(old) try{ old.remove(); }catch{}
+  }else if (container.querySelector('.custom-ctrl-group')) {
+    return;
+  }
+
   const wrap = document.createElement('div'); wrap.className='maplibregl-ctrl maplibregl-ctrl-group custom-ctrl-group';
+  wrap.style.order = '999'; // ensure at bottom
 
   const gpsBtn  = document.createElement('button'); gpsBtn.className='ctrl-btn blue'; gpsBtn.title='Use device GPS';
   const gpsImg = document.createElement('img'); gpsImg.src='gps-on.png'; gpsImg.alt='GPS';
   gpsBtn.appendChild(gpsImg);
-  gpsBtn.addEventListener('click', ()=>{ startBrowserWatch(true); try{ geolocate.trigger(); }catch{} });
+  gpsBtn.addEventListener('click', ()=>{
+    // Robust re-trigger: re-add control if something glitched (e.g. after style swaps)
+    ensureGeolocateControl();
+    try{ geolocate.trigger(); }catch{}
+    // One-shot browser fix to refresh lastUserPos + blue puck visibility
+    startBrowserWatch(true);
+  });
 
   const editBtn = document.createElement('button'); editBtn.className='ctrl-btn edit'; editBtn.title='Toggle Edit Mode';
   editBtn.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="#1f2937"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04 18.37 4.7a1 1 0 0 0-1.42 0L14.13 4.1l3.75 3.75z"/></svg>`;
   editBtn.addEventListener('click', ()=>{ editingEnabled = !editingEnabled; editBtn.classList.toggle('active', editingEnabled); if(!editingEnabled) closeStyleEditor(); });
 
   wrap.append(gpsBtn, editBtn);
-  // Append (not prepend) so it sits below the default controls
-  host.appendChild(wrap);
+
+  // Append AFTER MapTiler's controls reliably
+  const place = ()=>{
+    container.appendChild(wrap);
+  };
+  // If MapTiler adds controls slightly later, observe then append
+  const mo = new MutationObserver(()=> place());
+  place();
+  setTimeout(()=>{ try{ mo.disconnect(); }catch{} }, 1500);
 }
-mapgl.on('load', addCustomControls);
-setTimeout(addCustomControls, 2000);  // fallback
+mapgl.on('load', ()=> addCustomControls(true));
+mapgl.on('idle', ()=> addCustomControls());
+setTimeout(()=> addCustomControls(true), 1200);  // extra safety
 
 /* Browser-level watchPosition */
 let geoWatchId = null;
@@ -1143,7 +1177,7 @@ function circleGeoJSON(lng, lat, radiusMeters, steps=96){
   return {type:'Polygon',coordinates:[coords]};
 }
 
-/* ===== Sonar layer management (unchanged) ===== */
+/* ===== Sonar layer management ===== */
 function getOrCreateSonarLayer(){
   return getOrCreateLayerByName('Coin Sonar Scans');
 }
