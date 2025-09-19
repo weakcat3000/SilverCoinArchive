@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Sqkii Mapper — MapTiler + OSM (dark)</title>
+  <title>Sqkii Mapper</title>
 
   <!-- MapTiler SDK (MapLibre) -->
   <script src="https://cdn.maptiler.com/maptiler-sdk-js/v3.6.1/maptiler-sdk.umd.min.js"></script>
@@ -20,6 +20,9 @@
   <!-- Supabase JS (UMD) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.5/dist/umd/supabase.min.js"></script>
 
+  <!-- OGL (UMD) for Dark Veil -->
+  <script src="https://cdn.jsdelivr.net/npm/ogl@0.0.104/dist/ogl.umd.js"></script>
+
   <!-- Preload button click sound for instant play -->
   <link rel="preload" href="button.mp3" as="audio" />
 
@@ -34,32 +37,36 @@
     .ui-reopen{position:absolute;left:10px;top:10px;z-index:1100;display:none;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:6px 10px;font-weight:700;cursor:pointer;box-shadow:0 2px 14px rgba(0,0,0,.35);color:var(--text);}
     .app.ui-collapsed .ui-reopen{display:inline-block;}
     .sidebar{position:relative;background:var(--panel);border-right:1px solid var(--border);overflow:auto;width:var(--side);transition:width .28s ease;}
-    .header{padding:12px;border-bottom:1px solid var(--border);display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center}
+    /* Dark Veil canvas sits BEHIND sidebar content */
+    .darkveil-canvas{
+      position:absolute; inset:0; z-index:0; pointer-events:none; opacity:.9;
+      filter: saturate(1.05) contrast(1.06) brightness(.95);
+    }
+    .header{position:relative; z-index:1; padding:12px;border-bottom:1px solid var(--border);display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center}
     .project-title{font-weight:800;font-size:16px;display:flex;gap:8px;align-items:center}
-    .toolbar{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;}
+    .toolbar{position:relative; z-index:1; display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;}
     .btn{background:var(--chip);border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-weight:600;cursor:pointer;color:var(--text);}
     .btn.small{padding:4px 8px;font-size:12px;}
     .hint{color:var(--muted);font-size:12px;}
     .row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center}
     .row-split{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:center}
-    input[type="url"],select,input[type="text"],input[type="number"]{width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:8px;padding:8px 10px;background:var(--panel-2);color:var(--text);}
+    input[type="url"],select,input[type="text"],input[type="number"]{position:relative; z-index:1; width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:8px;padding:8px 10px;background:var(--panel-2);color:var(--text);}
     #mapgl, #mapleaf{height:100%;width:100%;}
-    .dropzone{border:2px dashed var(--border);border-radius:12px;margin:12px;padding:14px;text-align:center;color:var(--muted);background:var(--panel-2);}
-    .dropzone.dragover{border-color:var(--accent);color:var(--accent);background:#0e1729;}
-    .layers-empty{padding:14px;}
-    .layer{border-bottom:1px solid var(--border);background:var(--panel-2);}
+    /* (Removed dropzone entirely) */
+    .layers-empty{padding:14px; position:relative; z-index:1;}
+    .layer{position:relative; z-index:1; border-bottom:1px solid var(--border);background:var(--panel-2);}
     .layer+.layer{margin-top:10px;border-radius:10px;overflow:hidden;}
     .layer-head{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px;padding:10px 12px;}
     .layer-head .title{font-weight:700;}
-    .layer-head .actions{display:flex;gap:6px;}
+    .layer-head .actions{display:flex;gap:6px;flex-wrap:wrap;}
     .import-line{padding:8px 12px;background:#0e1420;border-top:1px solid var(--border);}
     .import-line .link{color:var(--accent);font-weight:600;cursor:pointer;}
-    .feature{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;padding:8px 12px;border-top:1px solid var(--border);}
-    .feature .name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .feature{display:grid;grid-template-columns:auto 1fr auto auto;gap:8px;align-items:center;padding:8px 12px;border-top:1px solid var(--border);}
+    .feature .name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;}
     .group-bullet{width:22px;height:22px;border-radius:999px;display:grid;place-items:center;border:1px solid #2a3243;background:#11161f;color:#fff;font-size:12px;font-weight:800;}
     .toggle{display:inline-grid;place-items:center;width:16px;height:16px;border:1px solid #2a3243;border-radius:4px;background:#0f141d;cursor:pointer;}
     .toggle.checked{background:#16a34a;border-color:#16a34a;}
-    details.grp{margin:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--panel-2);}
+    details.grp{position:relative; z-index:1; margin:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--panel-2);}
     details.grp>summary{list-style:none;padding:10px 12px;cursor:pointer;font-weight:700;}
     details.grp>summary::-webkit-details-marker{display:none;}
     .grp-list{padding:8px 12px;display:grid;gap:6px;max-height:220px;overflow:auto;}
@@ -93,6 +100,7 @@
 
     /* layout for the Map style row */
     .mapstyle-row{
+      position:relative; z-index:1;
       padding:12px;
       border-bottom:1px solid var(--border);
       display:grid;
@@ -128,27 +136,18 @@
     /* ---- Sonar Modal ---- */
     .sonar-options{display:grid;gap:10px;margin-top:10px}
     .seg{display:flex;gap:8px;flex-wrap:wrap}
-    .seg .chip{padding:6px 10px;border:1px solid var(--border);border-radius:999px;background:var(--chip);cursor:pointer;font-weight:700}
+    .seg .chip{padding:6px 10px;border:1px solid var(--border);border-radius:999px;background:var(--chip);cursor:pointer;font-weight:700;color:#fff;} /* white text */
     .seg .chip.active{outline:2px solid var(--accent)}
-    .seg .chip.red{background:rgba(239,68,68,.12);border-color:#5b1e1e}
-    .seg .chip.green{background:rgba(34,197,94,.12);border-color:#1b3e2a}
+    .seg .chip.red{background:rgba(239,68,68,.18);border-color:#5b1e1e}
+    .seg .chip.green{background:rgba(34,197,94,.18);border-color:#1b3e2a}
     .scan-area{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
     .scan-wait{display:none;gap:8px;align-items:center;color:var(--muted);font-weight:700}
     .scan-wait.visible{display:flex}
     .pulse{width:10px;height:10px;border-radius:999px;background:var(--accent);box-shadow:0 0 0 0 rgba(96,165,250,.7);animation:pulse 1s infinite;}
     @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(96,165,250,.7)}70%{box-shadow:0 0 0 18px rgba(96,165,250,0)}100%{box-shadow:0 0 0 0 rgba(96,165,250,0)}}
 
-    /* ---- Controls layout: keep custom group at bottom ---- */
+    /* ===== Controls: ONLY native geolocate; remove custom controls ===== */
     .maplibregl-ctrl-top-right{display:flex;flex-direction:column;gap:6px;}
-    .custom-ctrl-group{margin-top:8px; order: 999;}
-    .custom-ctrl-group .ctrl-btn{
-      width:32px;height:32px;display:grid;place-items:center;background:#fff;border:0;border-radius:2px;cursor:pointer;
-      box-shadow:0 0 0 1px rgba(0,0,0,.1), 0 1px 2px rgba(0,0,0,.15);
-    }
-    .custom-ctrl-group .ctrl-btn + .ctrl-btn{margin-top:6px;}
-    .ctrl-btn.blue{background:var(--blue);}
-    .ctrl-btn.blue img{width:18px;height:18px;display:block;filter:invert(1) brightness(10);}
-    .ctrl-btn.edit.active{outline:2px solid var(--accent);}
 
     /* Audio toggle icon btn */
     .icon-btn{display:inline-grid;place-items:center;width:30px;height:30px;border:1px solid var(--border);border-radius:8px;background:var(--panel-2);cursor:pointer}
@@ -160,6 +159,9 @@
   <button id="ui-reopen" class="ui-reopen" title="Open UI">Open UI</button>
 
   <aside class="sidebar" id="sidebar">
+    <!-- Dark Veil background canvas -->
+    <canvas id="darkveil" class="darkveil-canvas"></canvas>
+
     <div class="header">
       <div class="project-title">
         Sqkii Mapper
@@ -193,9 +195,9 @@
      </div>
     </div>
 
-    <div style="padding:12px;border-bottom:1px solid var(--border);">
+    <div style="padding:12px;border-bottom:1px solid var(--border); position:relative; z-index:1;">
       <div class="toolbar">
-        <button class="btn small" id="upload-btn">Upload</button>
+        <button class="btn small" id="upload-btn">Upload KML/KMZ</button>
         <input id="upload-input" type="file" accept=".kml,.kmz" multiple style="display:none" />
         <button class="btn small" id="add-layer">Add layer</button>
         <button class="btn small" id="export-kml">Export KML</button>
@@ -208,13 +210,8 @@
       </div>
     </div>
 
-    <div class="dropzone" id="dz">
-      <div><strong>Drop KML/KMZ here</strong></div>
-      <div class="hint">…or use the Upload button above</div>
-    </div>
-
     <!-- Draw Circle quick tool -->
-    <div style="padding:12px;border-bottom:1px solid var(--border);display:grid;gap:8px">
+    <div style="padding:12px;border-bottom:1px solid var(--border);display:grid;gap:8px; position:relative; z-index:1;">
       <button class="btn" id="draw-circle">DRAW CIRCLE</button>
       <div id="draw-inputs" style="display:none;gap:8px" class="row-split">
         <input id="draw-coord" type="text" placeholder="Input Coordinates (lat,lng)" />
@@ -238,10 +235,10 @@
   <!-- Long-press style editor -->
   <div id="style-editor" class="style-editor">
     <h4>Edit shape style</h4>
-    <div class="style-row"><label>Fill</label><input id="se-fill" type="color" value="#0b57d0"></div>
+    <div class="style-row"><label>Fill</label><input id="se-fill" type="color" value="#ffffff"></div>
     <div class="style-row"><label>Opacity</label><input id="se-fillop" type="range" min="0" max="1" step="0.05" value="0.2"></div>
     <div class="style-row"><label>Outline</label><input id="se-outline" type="checkbox" checked></div>
-    <div class="style-row"><label>Stroke</label><input id="se-stroke" type="color" value="#0b57d0"></div>
+    <div class="style-row"><label>Stroke</label><input id="se-stroke" type="color" value="#ffffff"></div>
     <div class="style-row"><label>Width</label><input id="se-width" type="number" min="0" max="20" step="0.5" value="2"></div>
     <div class="style-actions">
       <button class="btn small danger" id="se-delete">Delete</button>
@@ -331,10 +328,8 @@ function readdAllGroupsAfterGLStyleChange(){
     await ensureAllIconsOnCurrentStyle();
     layerList.forEach(e=>{ createGroupOnGL(e,true); if(e.visible===false && e.glLayerIds){ e.glLayerIds.forEach(lid=>{ if(mapgl.getLayer(lid)) mapgl.setLayoutProperty(lid,'visibility','none'); }); }});
     renderLayers(); renderGroupsVisibility();
-
-    // reattach geolocate AFTER style swap, and reinsert custom controls
-    ensureGeolocateControl();
-    addCustomControls(true);
+    // after style swap, ensure a *single* native geolocate control is attached
+    ensureGeolocateControl(true);
   })(); }
   mapgl.once('load', hydrate);
   mapgl.once('idle', hydrate);
@@ -345,7 +340,7 @@ let layerSeq=1, featureSeq=1;
 const layerList=[]; // {id,name,visible,data,items,glSourceId,glLayerIds[],lfGroup,lfLayers:Map,_deletedLayer?}
 const byId=id=>document.getElementById(id);
 
-function kmlColorToCss(aabbggrr){ if(!aabbggrr){return{hex:'#0b57d0',opacity:0.2};} let s=aabbggrr.trim(); if(s.length===6) s='ff'+s; return {hex:'#'+s.slice(6,8)+s.slice(4,6)+s.slice(2,4), opacity:parseInt(s.slice(0,2),16)/255}; }
+function kmlColorToCss(aabbggrr){ if(!aabbggrr){return{hex:'#ffffff',opacity:0.2};} let s=aabbggrr.trim(); if(s.length===6) s='ff'+s; return {hex:'#'+s.slice(6,8)+s.slice(4,6)+s.slice(2,4), opacity:parseInt(s.slice(0,2),16)/255}; }
 function defaultLabelFrom(n){ if(!n) return '•'; const c=(n.trim()[0]||'•').toUpperCase(); return /[A-Z0-9$]/.test(c)?c:'•'; }
 function escapeHtml(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function sanitizeHtml(input){ try{ const parser=new DOMParser(); const doc=parser.parseFromString('<div>'+input+'</div>','text/html'); const allowedTags={A:1,B:1,I:1,EM:1,STRONG:1,P:1,BR:1,UL:1,OL:1,LI:1,IMG:1,DIV:1,SPAN:1}; const allowedAttrs={A:['href','title'], IMG:['src','alt','width','height','loading']}; (function clean(n){ for(const el of [...n.childNodes]){ if(el.nodeType===1){ if(!allowedTags[el.tagName]){ while(el.firstChild) n.insertBefore(el.firstChild,el); n.removeChild(el); continue; } for(const a of [...el.attributes]){ const ok=(allowedAttrs[el.tagName]||[]); if(!ok.includes(a.name.toLowerCase())) el.removeAttribute(a.name); } if(el.tagName==='A'){ const href=el.getAttribute('href')||''; el.setAttribute('target','_blank'); el.setAttribute('rel','noopener'); if(/^javascript:/i.test(href)) el.removeAttribute('href'); } if(el.tagName==='IMG'){ el.setAttribute('loading','lazy'); } clean(el); } } })(doc.body); return doc.body.firstChild.innerHTML; }catch(e){ return ''; } }
@@ -364,6 +359,9 @@ function buildPopupHTMLFromProps(props){
 }
 function bboxOfFeature(f){ let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity; (function scan(c){ if(typeof c[0]==='number'){ const [x,y]=c; minX=Math.min(minX,x); minY=Math.min(minY,y); maxX=Math.max(maxX,x); maxY=Math.max(maxY,y);} else c.forEach(scan); })(f.geometry.coordinates); return [[minX,minY],[maxX,maxY]]; }
 function panPopupIntoViewGL(lngLat,liftPx=220){ const p=mapgl.project(lngLat); p.y-=liftPx; const center=mapgl.unproject(p); mapgl.easeTo({center,duration:350}); }
+
+/* Timestamps (match Sonar & Draw exactly) */
+function timestampLabel(){ return new Date().toLocaleString(); }
 
 /* ========== helpers for filtered rendering (exclude deleted) ========== */
 function filteredFeatureCollection(entry){
@@ -416,22 +414,22 @@ function createGroupOnGL(entry, clearIfExists){
 
     mapgl.addLayer({ id:fillId, type:'fill', source:srcId,
       filter:['all',notHidden,['in',['geometry-type'],['literal',['Polygon','MultiPolygon']]]],
-      paint:{ 'fill-color':['coalesce',['get','_fill'],'#0b57d0'], 'fill-opacity':['coalesce',['get','_fillOpacity'],0.2] } });
+      paint:{ 'fill-color':['coalesce',['get','_fill'],'#ffffff'], 'fill-opacity':['coalesce',['get','_fillOpacity'],0.2] } });
 
     mapgl.addLayer({ id:polyEdgeId, type:'line', source:srcId,
       filter:['all',notHidden,['in',['geometry-type'],['literal',['Polygon','MultiPolygon']]]],
-      paint:{ 'line-color':['coalesce',['get','_stroke'],'#0b57d0'], 'line-width':['coalesce',['get','_weight'],2], 'line-opacity':['coalesce',['get','_strokeOpacity'],0.9] } });
+      paint:{ 'line-color':['coalesce',['get','_stroke'],'#ffffff'], 'line-width':['coalesce',['get','_weight'],2], 'line-opacity':['coalesce',['get','_strokeOpacity'],0.2] } });
 
     mapgl.addLayer({ id:lineId, type:'line', source:srcId,
       filter:['all',notHidden,['in',['geometry-type'],['literal',['LineString','MultiLineString']]]],
-      paint:{ 'line-color':['coalesce',['get','_stroke'],'#0b57d0'], 'line-width':['coalesce',['get','_weight'],2], 'line-opacity':['coalesce',['get','_strokeOpacity'],0.9] } });
+      paint:{ 'line-color':['coalesce',['get','_stroke'],'#ffffff'], 'line-width':['coalesce',['get','_weight'],2], 'line-opacity':['coalesce',['get','_strokeOpacity'],0.2] } });
 
     mapgl.addLayer({ id:iconId, type:'symbol', source:srcId,
-      filter:['all',notHidden,['==',['geometry-type'],'Point']],
+      filter:['all',notHidden,['==',['geometry-type'],'Point'] ],
       layout:{ 'icon-image':['coalesce',['get','_icon'],DOLLAR_ICON_NAME], 'icon-size':['coalesce',['get','_iconSize'],1], 'icon-anchor':'bottom', 'icon-allow-overlap':true } });
 
     mapgl.addLayer({ id:lblId, type:'symbol', source:srcId,
-      filter:['all',notHidden,['==',['geometry-type'],'Point']],
+      filter:['all',notHidden,['==',['geometry-type'],'Point'] ],
       layout:{ 'text-field':['coalesce',['get','_label'],''], 'text-font':['Noto Sans Regular'], 'text-size':11, 'text-offset':[0,1.1], 'text-anchor':'top' },
       paint:{ 'text-color':'#e5e7eb','text-halo-color':'#0b0d11','text-halo-width':1.2 } });
 
@@ -460,9 +458,9 @@ function createGroupOnLeaflet(entry,rebuild=false){
 
   filteredFeatureCollection(entry).features.forEach(f=>{
     const fid=f.properties.fid, list=[];
-    const strokeOn = (f.properties._strokeOpacity ?? 0.9) > 0 && (f.properties._weight ?? 2) > 0;
-    const polyStyle={ color:f.properties._stroke||'#0b57d0', weight:f.properties._weight||2, opacity:f.properties._strokeOpacity ?? 0.9, fillColor:f.properties._fill||'#0b57d0', fillOpacity:f.properties._fillOpacity ?? 0.2, stroke: strokeOn };
-    const lineStyle={ color:f.properties._stroke||'#0b57d0', weight:f.properties._weight||2, opacity:f.properties._strokeOpacity ?? 0.9 };
+    const strokeOn = (f.properties._strokeOpacity ?? 0.2) > 0 && (f.properties._weight ?? 2) > 0;
+    const polyStyle={ color:f.properties._stroke||'#ffffff', weight:f.properties._weight||2, opacity:f.properties._strokeOpacity ?? 0.2, fillColor:f.properties._fill||'#ffffff', fillOpacity:f.properties._fillOpacity ?? 0.2, stroke: strokeOn };
+    const lineStyle={ color:f.properties._stroke||'#ffffff', weight:f.properties._weight||2, opacity:f.properties._strokeOpacity ?? 0.2 };
 
     if(f.geometry.type==='Point'){
       const [lng,lat]=f.geometry.coordinates;
@@ -527,7 +525,7 @@ function renderLayers(){
       }
       entry.data.features = tombs; entry.items = []; entry._deletedLayer = true; entry.visible=false;
       (entry.glLayerIds||[]).forEach(id=>{ if(mapgl.getLayer(id)) try{mapgl.removeLayer(id);}catch{} });
-      if(entry.glSourceId && mapgl.getSource(entry.glSourceId)) try{mapgl.removeSource(entry.glSourceId);}catch{};
+      if(entry.glSourceId && mapgl.getSource(entry.glSourceId)) try{mapgl.removeSource(entry.glSourceId);}catch{}; 
       if(entry.lfGroup) try{entry.lfGroup.remove();}catch{};
       renderGroupsVisibility(); renderLayers(); saveState();
     };
@@ -545,15 +543,52 @@ function renderLayers(){
         const row=document.createElement('div'); row.className='feature';
         const ico=document.createElement('div'); ico.className='group-bullet'; ico.textContent=it.label || '•';
         const name=document.createElement('div'); name.className='name'; name.textContent=it.name; name.onclick=()=> zoomToFeature(entry,it.fid);
+        const moveBtn=document.createElement('button'); moveBtn.className='btn small'; moveBtn.textContent='Move';
+        moveBtn.onclick=()=>{ const target=prompt('Move to group (existing or new):', entry.name); if(!target) return; moveFeatureToGroup(entry, it.fid, target); };
         const togg=document.createElement('div'); togg.className=it.visible!==false?'toggle checked':'toggle';
         togg.onclick=()=>{ it.visible=!(it.visible!==false); const gf=entry.data.features.find(f=>f.properties.fid===it.fid); if(gf){ gf.properties.hidden = it.visible===false; gf.properties._ts = Date.now(); refreshGroupBoth(entry); } togg.className=it.visible!==false?'toggle checked':'toggle'; saveState(); };
-        row.append(ico,name,togg); wrap.appendChild(row);
+        row.append(ico,name,moveBtn,togg); wrap.appendChild(row);
       }
     }
     host.appendChild(wrap);
   }
 }
 function zoomToFeature(entry,fid){ const f=entry.data.features.find(x=>x.properties&&x.properties.fid===fid); if(!f) return; const b=bboxOfFeature(f); if(engine==='gl') mapgl.fitBounds(b,{padding:40,duration:600}); else mapleaf.fitBounds([[b[0][1],b[0][0]],[b[1][1],b[1][0]]],{padding:[40,40]}); }
+
+/* === Move feature to another group === */
+function getOrCreateLayerByName(name){
+  let entry = layerList.find(l => l.name === name && !l._deletedLayer);
+  if(!entry){
+    entry = { id:layerSeq++, name, visible:true, data:{type:'FeatureCollection',features:[]}, items:[], glSourceId:null, glLayerIds:[], lfGroup:null, lfLayers:null };
+    layerList.push(entry);
+    if(mapgl.isStyleLoaded && mapgl.isStyleLoaded()) createGroupOnGL(entry); else mapgl.once('load',()=>createGroupOnGL(entry));
+    createGroupOnLeaflet(entry);
+    renderGroupsVisibility(); renderLayers(); saveState();
+  }
+  return entry;
+}
+function rebuildItemsFromFeatures(features){
+  return (features||[])
+    .filter(f=>!f.properties?._deleted)
+    .map(f=>({ fid:f.properties?.fid, name:f.properties?.name||'Feature', label:(f.geometry?.type==='Point')?(f.properties?._label||'•'):'•', visible:!(f.properties?.hidden) }));
+}
+function moveFeatureToGroup(fromEntry, fid, targetName){
+  const fIdx = fromEntry.data.features.findIndex(f=>String(f.properties?.fid)===String(fid));
+  if(fIdx<0) return;
+  const f = fromEntry.data.features.splice(fIdx,1)[0];
+  // tombstone in old layer?
+  // (not deleting logically; we actually moved it)
+  const itIdx = (fromEntry.items||[]).findIndex(it=>String(it.fid)===String(fid));
+  if(itIdx>=0) fromEntry.items.splice(itIdx,1);
+  refreshGroupBoth(fromEntry);
+
+  const toEntry = getOrCreateLayerByName(targetName);
+  toEntry.data.features.push(f);
+  toEntry.items = rebuildItemsFromFeatures(toEntry.data.features);
+  refreshGroupBoth(toEntry);
+
+  renderGroupsVisibility(); renderLayers(); saveState();
+}
 
 /* ================= Loaders ================= */
 async function loadKMZFile(file,forceGroupName){ try{ const zip=await JSZip.loadAsync(file); const kmlEntry=Object.values(zip.files).find(f=>f.name.toLowerCase().endsWith('.kml')); if(!kmlEntry){ alert('No .kml found inside KMZ: '+file.name); return; } const assetMap=await buildKmzAssetMap(zip); const text=await kmlEntry.async('text'); addKmlText(text,file.name,{assetMap},forceGroupName); }catch(e){ console.error(e); alert('Failed to read KMZ: '+file.name); } }
@@ -574,14 +609,8 @@ function addKmlText(text,filename,opts,forceGroupName){
       const f=gj.features[idx], m=metaList[idx], fid=featureSeq++;
       const props=f.properties||{}; const itemName=m.name||props.name||props.Name||props.title||('Feature '+fid);
 
-      const style={};
-      if(m.style.lineColor){ const lc=kmlColorToCss(m.style.lineColor); style._stroke=lc.hex; style._strokeOpacity=lc.opacity; }
-      if(m.style.lineWidth){ const w=parseFloat(m.style.lineWidth); if(!isNaN(w)) style._weight=w; }
-      if(m.style.polyColor){ const pc=kmlColorToCss(m.style.polyColor); style._fill=pc.hex; style._fillOpacity=pc.opacity; }
-      if(style._fillOpacity===undefined) style._fillOpacity=0.2;
-      if(style._stroke===undefined) style._stroke='#0b57d0';
-      if(style._weight===undefined) style._weight=2;
-      if(style._strokeOpacity===undefined) style._strokeOpacity=0.9;
+      // Force default style: white fill + white outline @ 20% opacity
+      const style={ _fill:'#ffffff', _fillOpacity:0.2, _stroke:'#ffffff', _strokeOpacity:0.2, _weight:2 };
 
       let iconName=DOLLAR_ICON_NAME, iconUrl='';
       const iconHref=m.style.iconHref;
@@ -604,7 +633,7 @@ function addKmlText(text,filename,opts,forceGroupName){
   renderLayers(); renderGroupsVisibility(); saveState();
 }
 
-/* ========= Upload/Drop/URL ========= */
+/* ========= Upload/URL ========= */
 byId('upload-btn').onclick=()=>byId('upload-input').click();
 byId('upload-input').addEventListener('change', ev=>{
   const files=[...(ev.target.files||[])];
@@ -614,38 +643,21 @@ byId('upload-input').addEventListener('change', ev=>{
     else f.text().then(txt=>{ addKmlText(txt,f.name); next(i+1); });
   })(0);
 });
-['dragenter','dragover','dragleave','drop'].forEach(evt=>{
-  byId('dz').addEventListener(evt, e=>{
-    e.preventDefault(); if(evt==='dragenter'||evt==='dragover') e.currentTarget.classList.add('dragover'); else if(evt==='dragleave') e.currentTarget.classList.remove('dragover');
-    if(evt==='drop'){ e.currentTarget.classList.remove('dragover'); const files=[...(e.dataTransfer?.files||[])]; (function next(i){ if(i>=files.length) return; const f=files[i]; if(f.name.toLowerCase().endsWith('.kmz')) loadKMZFile(f).then(()=>next(i+1)); else f.text().then(txt=>{ addKmlText(txt,f.name); next(i+1); }); })(0); }
-  });
-});
 byId('url-load').onclick=()=>{ const url=byId('url-input').value.trim(); if(!url) return; (/\.kmz(\?|#|$)/i.test(url) ? loadKMZFromUrl(url) : loadKMLFromUrl(url)).catch(e=>{ console.error(e); alert('Failed to load from URL (CORS or bad link).'); }); };
 
 /* Add empty layer */
 byId('add-layer').onclick=function(){ const entry={ id:layerSeq++, name:'Untitled layer', visible:true, data:{type:'FeatureCollection',features:[]}, items:[], glSourceId:null, glLayerIds:[], lfGroup:null, lfLayers:null }; layerList.push(entry); createGroupOnGL(entry); createGroupOnLeaflet(entry); renderLayers(); renderGroupsVisibility(); saveState(); };
 
 /* ======= Circles helper (separate from Sonar) ======= */
-function getOrCreateLayerByName(name){
-  let entry = layerList.find(l => l.name === name && !l._deletedLayer);
-  if(!entry){
-    entry = { id:layerSeq++, name, visible:true, data:{type:'FeatureCollection',features:[]}, items:[], glSourceId:null, glLayerIds:[], lfGroup:null, lfLayers:null };
-    layerList.push(entry);
-    if(mapgl.isStyleLoaded && mapgl.isStyleLoaded()) createGroupOnGL(entry); else mapgl.once('load',()=>createGroupOnGL(entry));
-    createGroupOnLeaflet(entry);
-    renderGroupsVisibility(); renderLayers(); saveState();
-  }
-  return entry;
-}
 function addCircleToLayer(centerLngLat, radius, color, layerName){
   const entry = getOrCreateLayerByName(layerName);
-  const fid = featureSeq++; // numeric ID so editor/delete works consistently
+  const fid = featureSeq++; 
   const hex = (color==='green') ? '#22c55e' : '#ef4444';
   const geom = circleGeoJSON(centerLngLat[0], centerLngLat[1], radius, 96);
-  const name = `Circle ${radius}m (${color.toUpperCase()}) @ ${new Date().toLocaleString()}`;
+  const name = `Circle ${radius}m (${(color||'red').toUpperCase()}) @ ${timestampLabel()}`; // SAME FORMAT as Sonar
   const props = { fid, name, hidden:false, _gid:fid, _ts:Date.now(), _fill:hex, _fillOpacity:0.18, _stroke:hex, _strokeOpacity:0.9, _weight:2 };
   entry.data.features.push({ type:'Feature', geometry:geom, properties:props });
-  entry.items.push({ fid, name, label:'•', visible:true });
+  entry.items = rebuildItemsFromFeatures(entry.data.features);
   refreshGroupBoth(entry); renderLayers(); renderGroupsVisibility(); saveState();
   const b=bboxOfFeature({geometry:geom});
   if(engine==='gl') mapgl.fitBounds(b,{padding:40,duration:500}); else mapleaf.fitBounds([[b[0][1],b[0][0]],[b[1][1],b[1][0]]],{padding:[40,40]});
@@ -692,19 +704,19 @@ const PRELOAD_COINS = ['All Coin Records 2023-2024.kmz','All Coins Record 2023-2
 /* ===== Long-press style editor (Edit Mode) ===== */
 const editorEl=byId('style-editor');
 const seFill=byId('se-fill'), seFillOp=byId('se-fillop'), seOutline=byId('se-outline'), seStroke=byId('se-stroke'), seWidth=byId('se-width'), seClose=byId('se-close'), seDelete=byId('se-delete');
-let editCtx=null, editingEnabled=false;
+let editCtx=null, editingEnabled=true; // keep edit mode on by default (custom toggle removed)
 
 function openStyleEditor(entry,fid,screenX,screenY){
   if(!editingEnabled) return;
   const f=entry.data.features.find(x=>x.properties.fid===fid); if(!f) return;
   const p=f.properties;
-  editCtx = { entry, fid }; // ensure subsequent Apply/Delete target the right feature
+  editCtx = { entry, fid };
 
-  seFill.value = p._fill || '#0b57d0';
+  seFill.value = p._fill || '#ffffff';
   seFillOp.value = (p._fillOpacity ?? 0.2);
-  const strokeOn = (p._strokeOpacity ?? 0.9) > 0 && (p._weight ?? 2) > 0;
+  const strokeOn = (p._strokeOpacity ?? 0.2) > 0 && (p._weight ?? 2) > 0;
   seOutline.checked = strokeOn;
-  seStroke.value = p._stroke || '#0b57d0';
+  seStroke.value = p._stroke || '#ffffff';
   seWidth.value = p._weight ?? 2;
 
   const left = Math.min(screenX+10, window.innerWidth-300);
@@ -744,8 +756,7 @@ seDelete.addEventListener('click', ()=>{
     geometry:{type:'Point',coordinates:[0,0]},
     properties:{ fid:key, _gid:key, _deleted:true, _ts:Date.now(), name:p.name||'Deleted feature' }
   });
-  const itx = (entry.items||[]).findIndex(it=>String(it.fid)===String(fid));
-  if(itx>=0) entry.items.splice(itx,1);
+  entry.items = rebuildItemsFromFeatures(entry.data.features);
 
   refreshGroupBoth(entry); renderLayers(); renderGroupsVisibility(); saveState();
   closeStyleEditor();
@@ -808,8 +819,10 @@ async function applyStateArray(arr){
   clearAllLayers();
   await ensureAllIconsOnCurrentStyle();
   for (const saved of (arr||[])){
-    const entry={ id:saved.id ?? layerSeq++, name:saved.name ?? 'Layer', visible:saved.visible!==false, data:saved.data, items:saved.items||[], glSourceId:null, glLayerIds:[], lfGroup:null, lfLayers:null, _deletedLayer: !!saved._deletedLayer };
+    const entry={ id:saved.id ?? layerSeq++, name:saved.name ?? 'Layer', visible:saved.visible!==false, data:saved.data, items:[], glSourceId:null, glLayerIds:[], lfGroup:null, lfLayers:null, _deletedLayer: !!saved._deletedLayer };
     await rebindFeatureIcons(entry);
+    // Rebuild items from features to fix "missing groups" issue after join
+    entry.items = rebuildItemsFromFeatures(entry.data?.features || []);
     layerList.push(entry);
     if(mapgl.isStyleLoaded && mapgl.isStyleLoaded()) createGroupOnGL(entry); else mapgl.once('load',()=>createGroupOnGL(entry));
     createGroupOnLeaflet(entry);
@@ -866,9 +879,7 @@ function mergeLayer(remoteL, localL){
   for(const f of (remoteL.data?.features||[])){ const k=featureKey(f)||`rf-${Math.random()}`; byKey.set(k,f); }
   for(const f of (localL.data?.features||[])){ const k=featureKey(f)||`lf-${Math.random()}`; byKey.set(k, byKey.has(k)?newerFeature(byKey.get(k),f):f); }
   out.data.features=[...byKey.values()];
-  out.items = out.data.features
-    .filter(f=>!f.properties?._deleted)
-    .map(f=>({ fid:f.properties?.fid, name:f.properties?.name||'Feature', label:(f.geometry?.type==='Point')?(f.properties?._label||'•'):'•', visible:!(f.properties?.hidden) }));
+  out.items = rebuildItemsFromFeatures(out.data.features);
   return out;
 }
 function layerKey(L){ return String(L?.name ?? L?.id ?? ''); }
@@ -971,7 +982,7 @@ document.getElementById('server-continue').addEventListener('click', ()=>{
 
 /* ====================== AUDIO + SFX ====================== */
 let audioEnabled = true;
-const bgm = new Audio('Evening Traveler - Road Trip.mp3'); bgm.volume = 0.30; bgm.loop = true;
+const bgm = new Audio('Evening Traveler - Road Trip.mp3'); bgm.volume = 0.25; bgm.loop = true; /* 25% volume */
 document.addEventListener('visibilitychange', ()=>{ if(document.hidden) bgm.pause(); else if(audioEnabled) bgm.play().catch(()=>{}); });
 
 let audioCtx = null, buttonBuffer = null;
@@ -1028,35 +1039,36 @@ document.addEventListener('click', (ev)=>{ if(ev.target.closest('button')) playC
 
 const sonarSfx = new Audio('sonar-sound.mp3');
 
-/* ====================== GPS CONTROLS (single instance, robust) ====================== */
+/* ====================== GPS CONTROLS ====================== */
+/* Only native MapTiler GeolocateControl, with puck visible */
 let geolocate = null;
-function ensureGeolocateControl() {
-  // clean up any stray DOM (prevents duplicates after style swaps)
-  document.querySelectorAll('.maplibregl-ctrl-geolocate').forEach(el => {
-    if (!el.closest('.maplibregl-ctrl-top-right')) return;
-    try { el.remove(); } catch {}
-  });
-
-  try{ if(geolocate){ mapgl.removeControl(geolocate); } }catch{}
-  geolocate = new maptilersdk.GeolocateControl({
-    positionOptions: { enableHighAccuracy: true },
-    trackUserLocation: true,
-    showUserLocation: true,  // ensure the blue puck appears
-    showUserHeading: true
-  });
-  mapgl.addControl(geolocate, 'top-right');
-
-  geolocate.on('geolocate', onFix);
-  geolocate.on('error', (e)=> console.warn('Geolocate error:', e));
+function ensureGeolocateControl(forceReattach=false) {
+  if (forceReattach && geolocate) {
+    try { mapgl.removeControl(geolocate); } catch {}
+    geolocate = null;
+  }
+  if (!geolocate) {
+    geolocate = new maptilersdk.GeolocateControl({
+      positionOptions: { enableHighAccuracy: true },
+      trackUserLocation: true,
+      showUserLocation: true,
+      showAccuracyCircle: true
+    });
+    mapgl.addControl(geolocate, 'top-right');
+    geolocate.on('geolocate', onFix);
+    geolocate.on('trackuserlocationstart', ()=> setGpsState('TRACKING'));
+    geolocate.on('trackuserlocationend',   ()=> setGpsState('IDLE'));
+    geolocate.on('error', (e)=> console.warn('Geolocate error:', e));
+  }
+  return geolocate;
 }
-ensureGeolocateControl();
-
 let lastUserPos = null; // [lng, lat]
 const sonarBtn = byId('sonar-btn');
 function updateSonarEnabled(){
   if(lastUserPos){ sonarBtn.classList.remove('disabled'); sonarBtn.title='Activate Coin Sonar'; }
   else { sonarBtn.classList.add('disabled'); sonarBtn.title='Turn on GPS to use Sonar'; }
 }
+function setGpsState(state){ /* debug hook */ }
 function onFix(e){
   const lng = e?.coords?.longitude ?? e?.lng ?? e?.lngLat?.lng;
   const lat = e?.coords?.latitude  ?? e?.lat ?? e?.lngLat?.lat;
@@ -1065,58 +1077,8 @@ function onFix(e){
   }
 }
 
-/* Custom control group: Blue GPS + Edit toggle BELOW zoom/compass */
-function addCustomControls(forceReattach=false){
-  const container = mapgl.getContainer().querySelector('.maplibregl-ctrl-top-right') || mapgl.getContainer();
-  if(!container) return;
-
-  if(forceReattach){
-    const old = container.querySelector('.custom-ctrl-group');
-    if(old) try{ old.remove(); }catch{}
-  }else if (container.querySelector('.custom-ctrl-group')) {
-    return;
-  }
-
-  const wrap = document.createElement('div'); wrap.className='maplibregl-ctrl maplibregl-ctrl-group custom-ctrl-group';
-  wrap.style.order = '999'; // keep at bottom
-
-  const gpsBtn  = document.createElement('button'); gpsBtn.className='ctrl-btn blue'; gpsBtn.title='Use device GPS';
-  const gpsImg = document.createElement('img'); gpsImg.src='gps-on.png'; gpsImg.alt='GPS';
-  gpsBtn.appendChild(gpsImg);
-  gpsBtn.addEventListener('click', ()=>{
-    try { geolocate && geolocate.trigger(); } catch {}
-    setTimeout(()=>{ try { geolocate && geolocate.trigger(); } catch {} }, 500); // kick stubborn mobiles
-    startBrowserWatch(true); // keep Sonar in sync
-  });
-
-  const editBtn = document.createElement('button'); editBtn.className='ctrl-btn edit'; editBtn.title='Toggle Edit Mode';
-  editBtn.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="#1f2937"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04 18.37 4.7a1 1 0 0 0-1.42 0L14.13 4.1l3.75 3.75z"/></svg>`;
-  editBtn.addEventListener('click', ()=>{ editingEnabled = !editingEnabled; editBtn.classList.toggle('active', editingEnabled); if(!editingEnabled) closeStyleEditor(); });
-
-  wrap.append(gpsBtn, editBtn);
-  container.appendChild(wrap);
-}
-mapgl.on('load', ()=> addCustomControls(true));
-
-/* Browser-level watchPosition */
-let geoWatchId = null;
-function startBrowserWatch(forceOneShot=false){
-  if(!('geolocation' in navigator)) return;
-  if(geoWatchId===null){
-    geoWatchId = navigator.geolocation.watchPosition(
-      pos=>{ lastUserPos=[pos.coords.longitude,pos.coords.latitude]; updateSonarEnabled(); },
-      err=>{ console.warn('watchPosition error:', err); },
-      { enableHighAccuracy:true, maximumAge:5000, timeout:10000 }
-    );
-  }
-  if(forceOneShot){
-    navigator.geolocation.getCurrentPosition(
-      pos=>{ lastUserPos=[pos.coords.longitude,pos.coords.latitude]; updateSonarEnabled(); },
-      ()=>{}, { enableHighAccuracy:true, maximumAge:5000, timeout:5000 }
-    );
-  }
-}
-startBrowserWatch();
+/* Attach native geolocate once map is ready */
+mapgl.on('load', ()=> { ensureGeolocateControl(); });
 
 /* ===== Sonar UI ===== */
 const sonarModal = byId('sonar-modal');
@@ -1130,7 +1092,7 @@ let sonarColor  = 'red';
 
 function openSonar(){ sonarModal.classList.add('visible'); appEl.classList.add('blocked-by-modal'); }
 function closeSonar(){ sonarModal.classList.remove('visible'); appEl.classList.remove('blocked-by-modal'); scanWait.classList.remove('visible'); }
-sonarBtn.addEventListener('click', ()=>{ if(!lastUserPos){ alert('Please enable GPS first.'); return; } openSonar(); });
+sonarBtn.addEventListener('click', ()=>{ if(!lastUserPos){ alert('Please enable GPS (top-right button) first.'); return; } openSonar(); });
 sonarModal.addEventListener('click', (e)=>{ if(e.target === sonarModal) closeSonar(); });
 function setActiveChip(container, chip){ container.querySelectorAll('.chip').forEach(c=>c.classList.remove('active')); chip.classList.add('active'); }
 radiusSeg.addEventListener('click', (e)=>{ const btn=e.target.closest('.chip'); if(!btn) return; sonarRadius=parseInt(btn.dataset.radius,10)||50; setActiveChip(radiusSeg,btn); });
@@ -1158,10 +1120,10 @@ function addSonarCircle(centerLngLat, radius, color){
   const fid = `sonar-${clientId}-${Date.now()}-${Math.floor(Math.random()*1e6)}`;
   const hex = (color==='green') ? '#22c55e' : '#ef4444';
   const geom = circleGeoJSON(centerLngLat[0], centerLngLat[1], radius, 96);
-  const name = `Sonar ${radius}m (${color.toUpperCase()}) @ ${new Date().toLocaleString()}`;
+  const name = `Sonar ${radius}m (${color.toUpperCase()}) @ ${timestampLabel()}`;
   const props = { fid, name, hidden:false, _gid:fid, _ts:Date.now(), _fill:hex, _fillOpacity:0.18, _stroke:hex, _strokeOpacity:0.9, _weight:2 };
   entry.data.features.push({ type:'Feature', geometry:geom, properties:props });
-  entry.items.push({ fid, name, label:'•', visible:true });
+  entry.items = rebuildItemsFromFeatures(entry.data.features);
   refreshGroupBoth(entry); renderLayers(); renderGroupsVisibility(); saveState();
   const b=bboxOfFeature({geometry:geom});
   if(engine==='gl') mapgl.fitBounds(b,{padding:40,duration:500}); else mapleaf.fitBounds([[b[0][1],b[0][0]],[b[1][1],b[1][0]]],{padding:[40,40]});
@@ -1187,7 +1149,7 @@ window.addEventListener('DOMContentLoaded', ()=>{
 
 /* ================= Export KML / KMZ ================= */
 function escapeXml(s){return String(s).replace(/[<>&'"]/g,c=>({ '<':'&lt;','>':'&gt;','&':'&amp;',"'":'&apos;','"':'&quot;' }[c]));}
-function kmlColorFromCss(hex,opacity){ const h=(hex||'#0b57d0').replace('#',''); const r=parseInt(h.slice(0,2),16)||0, g=parseInt(h.slice(2,4),16)||0, b=parseInt(h.slice(4,6),16)||0; const a=Math.round((opacity==null?1:opacity)*255); const to2=x=>x.toString(16).padStart(2,'0'); return to2(a)+to2(b)+to2(g)+to2(r); }
+function kmlColorFromCss(hex,opacity){ const h=(hex||'#ffffff').replace('#',''); const r=parseInt(h.slice(0,2),16)||0, g=parseInt(h.slice(2,4),16)||0, b=parseInt(h.slice(4,6),16)||0; const a=Math.round((opacity==null?1:opacity)*255); const to2=x=>x.toString(16).padStart(2,'0'); return to2(a)+to2(b)+to2(g)+to2(r); }
 function serializePlacemark(f){
   const p=f.properties||{}, name=escapeXml(p.name||'Feature'), styleId='s'+(p.fid||'x');
   if(p._deleted) return '';
@@ -1213,6 +1175,120 @@ function exportKMLString(){
 function downloadBlob(name, blob){ const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(url), 1500); }
 byId('export-kml').onclick=()=>{ const kml=exportKMLString(); downloadBlob('sqkii-export.kml', new Blob([kml],{type:'application/vnd.google-earth.kml+xml'})); };
 byId('export-kmz').onclick=async()=>{ const zip=new JSZip(); const kml=exportKMLString(); zip.file('doc.kml', kml); const blob=await zip.generateAsync({type:'blob'}); downloadBlob('sqkii-export.kmz', blob); };
+
+/* ================= Dark Veil (OGL — EXACT shader) ================= */
+(function DarkVeil(){
+  const {Renderer, Program, Mesh, Triangle, Vec2} = OGL;
+  const canvas = document.getElementById('darkveil');
+  if(!canvas) return;
+  const parent = canvas.parentElement;
+
+  const vertex = `
+attribute vec2 position;
+void main(){gl_Position=vec4(position,0.0,1.0);}
+`;
+  const fragment = `
+#ifdef GL_ES
+precision lowp float;
+#endif
+uniform vec2 uResolution;
+uniform float uTime;
+uniform float uHueShift;
+uniform float uNoise;
+uniform float uScan;
+uniform float uScanFreq;
+uniform float uWarp;
+#define iTime uTime
+#define iResolution uResolution
+
+vec4 buf[8];
+float rand(vec2 c){return fract(sin(dot(c,vec2(12.9898,78.233)))*43758.5453);}
+
+mat3 rgb2yiq=mat3(0.299,0.587,0.114,0.596,-0.274,-0.322,0.211,-0.523,0.312);
+mat3 yiq2rgb=mat3(1.0,0.956,0.621,1.0,-0.272,-0.647,1.0,-1.106,1.703);
+
+vec3 hueShiftRGB(vec3 col,float deg){
+    vec3 yiq=rgb2yiq*col;
+    float rad=radians(deg);
+    float cosh=cos(rad),sinh=sin(rad);
+    vec3 yiqShift=vec3(yiq.x,yiq.y*cosh-yiq.z*sinh,yiq.y*sinh+yiq.z*cosh);
+    return clamp(yiq2rgb*yiqShift,0.0,1.0);
+}
+
+vec4 sigmoid(vec4 x){return 1./(1.+exp(-x));}
+
+vec4 cppn_fn(vec2 coordinate,float in0,float in1,float in2){
+    buf[6]=vec4(coordinate.x,coordinate.y,0.3948333106474662+in0,0.36+in1);
+    buf[7]=vec4(0.14+in2,sqrt(coordinate.x*coordinate.x+coordinate.y*coordinate.y),0.,0.);
+    buf[0]=mat4(vec4(6.5404263,-3.6126034,0.7590882,-1.13613),vec4(2.4582713,3.1660357,1.2219609,0.06276096),vec4(-5.478085,-6.159632,1.8701609,-4.7742867),vec4(6.039214,-5.542865,-0.90925294,3.251348))*buf[6]+mat4(vec4(0.8473259,-5.722911,3.975766,1.6522468),vec4(-0.24321538,0.5839259,-1.7661959,-5.350116),vec4(0.,0.,0.,0.),vec4(0.,0.,0.,0.))*buf[7]+vec4(0.21808943,1.1243913,-1.7969975,5.0294676);
+    buf[1]=mat4(vec4(-3.3522482,-6.0612736,0.55641043,-4.4719114),vec4(0.8631464,1.7432913,5.643898,1.6106541),vec4(2.4941394,-3.5012043,1.7184316,6.357333),vec4(3.310376,8.209261,1.1355612,-1.165539))*buf[6]+mat4(vec4(5.24046,-13.034365,0.009859298,15.870829),vec4(2.987511,3.129433,-0.89023495,-1.6822904),vec4(0.,0.,0.,0.),vec4(0.,0.,0.,0.))*buf[7]+vec4(-5.9457836,-6.573602,-0.8812491,1.5436668);
+    buf[0]=sigmoid(buf[0]);buf[1]=sigmoid(buf[1]);
+    buf[2]=mat4(vec4(-15.219568,8.095543,-2.429353,-1.9381982),vec4(-5.951362,4.3115187,2.6393783,1.274315),vec4(-7.3145227,6.7297835,5.2473326,5.9411426),vec4(5.0796127,8.979051,-1.7278991,-1.158976))*buf[6]+mat4(vec4(-11.967154,-11.608155,6.1486754,11.237008),vec4(2.124141,-6.263192,-1.7050359,-0.7021966),vec4(0.,0.,0.,0.),vec4(0.,0.,0.,0.))*buf[7]+vec4(-4.17164,-3.2281182,-4.576417,-3.6401186);
+    buf[3]=mat4(vec4(3.1832156,-13.738922,1.879223,3.233465),vec4(0.64300746,12.768129,1.9141049,0.50990224),vec4(-0.049295485,4.4807224,1.4733979,1.801449),vec4(5.0039253,13.000481,3.3991797,-4.5561905))*buf[6]+mat4(vec4(-0.1285731,7.720628,-3.1425676,4.742367),vec4(0.6393625,3.714393,-0.8108378,-0.39174938),vec4(0.,0.,0.,0.),vec4(0.,0.,0.,0.))*buf[7]+vec4(-1.1811101,-21.621881,0.7851888,1.2329718);
+    buf[2]=sigmoid(buf[2]);buf[3]=sigmoid(buf[3]);
+    buf[4]=mat4(vec4(5.214916,-7.183024,2.7228765,2.6592617),vec4(-5.601878,-25.3591,4.067988,0.4602802),vec4(-10.57759,24.286327,21.102104,37.546658),vec4(4.3024497,-1.9625226,2.3458803,-1.372816))*buf[0]+mat4(vec4(-17.6526,-10.507558,2.2587414,12.462782),vec4(6.265566,-502.75443,-12.642513,0.9112289),vec4(-10.983244,20.741234,-9.701768,-0.7635988),vec4(5.383626,1.4819539,-4.1911616,-4.8444734))*buf[1]+mat4(vec4(12.785233,-16.345072,-0.39901125,1.7955981),vec4(-30.48365,-1.8345358,1.4542528,-1.1118771),vec4(19.872723,-7.337935,-42.941723,-98.52709),vec4(8.337645,-2.7312303,-2.2927687,-36.142323))*buf[2]+mat4(vec4(-16.298317,3.5471997,-0.44300047,-9.444417),vec4(57.5077,-35.609753,16.163465,-4.1534753),vec4(-0.07470326,-3.8656476,-7.0901804,3.1523974),vec4(-12.559385,-7.077619,1.490437,-0.8211543))*buf[3]+vec4(-7.67914,15.927437,1.3207729,-1.6686112);
+    buf[5]=mat4(vec4(-1.4109162,-0.372762,-3.770383,-21.367174),vec4(-6.2103205,-9.35908,0.92529047,8.82561),vec4(11.460242,-22.348068,13.625772,-18.693201),vec4(-0.3429052,-3.9905605,-2.4626114,-0.45033523))*buf[0]+mat4(vec4(7.3481627,-4.3661838,-6.3037653,-3.868115),vec4(1.5462853,6.5488915,1.9701879,-0.58291394),vec4(6.5858274,-2.2180402,3.7127688,-1.3730392),vec4(-5.7973905,10.134961,-2.3395722,-5.965605))*buf[1]+mat4(vec4(-2.5132585,-6.6685553,-1.4029363,-0.16285264),vec4(-0.37908727,0.53738135,4.389061,-1.3024765),vec4(-0.70647055,2.0111287,-5.1659346,-3.728635),vec4(-13.562562,10.487719,-0.9173751,-2.6487076))*buf[2]+mat4(vec4(-8.645013,6.5546675,-6.3944063,-5.5933375),vec4(-0.57783127,-1.077275,36.91025,5.736769),vec4(14.283112,3.7146652,7.1452246,-4.5958776),vec4(2.7192075,3.6021907,-4.366337,-2.3653464))*buf[3]+vec4(-5.9000807,-4.329569,1.2427121,8.59503);
+    buf[4]=sigmoid(buf[4]);buf[5]=sigmoid(buf[5]);
+    buf[6]=mat4(vec4(-1.61102,0.7970257,1.4675229,0.20917463),vec4(-28.793737,-7.1390953,1.5025433,4.656581),vec4(-10.94861,39.66238,0.74318546,-10.095605),vec4(-0.7229728,-1.5483948,0.7301322,2.1687684))*buf[0]+mat4(vec4(3.2547753,21.489103,-1.0194173,-3.3100595),vec4(-3.7316632,-3.3792162,-7.223193,-0.23685838),vec4(13.1804495,0.7916005,5.338587,5.687114),vec4(-4.167605,-17.798311,-6.815736,-1.6451967))*buf[1]+mat4(vec4(0.604885,-7.800309,-7.213122,-2.741014),vec4(-3.522382,-0.12359311,-0.5258442,0.43852118),vec4(9.6752825,-22.853785,2.062431,0.099892326),vec4(-4.3196306,-17.730087,2.5184598,5.30267))*buf[2]+mat4(vec4(-6.545563,-15.790176,-6.0438633,-5.415399),vec4(-43.591583,28.551912,-16.00161,18.84728),vec4(4.212382,8.394307,3.0958717,8.657522),vec4(-5.0237565,-4.450633,-4.4768,-5.5010443))*buf[3]+mat4(vec4(1.6985557,-67.05806,6.897715,1.9004834),vec4(1.8680354,2.3915145,2.5231109,4.081538),vec4(11.158006,1.7294737,2.0738268,7.386411),vec4(-4.256034,-306.24686,8.258898,-17.132736))*buf[4]+mat4(vec4(1.6889864,-4.5852966,3.8534803,-6.3482175),vec4(1.3543309,-1.2640043,9.932754,2.9079645),vec4(-5.2770967,0.07150358,-0.13962056,3.3269649),vec4(28.34703,-4.918278,6.1044083,4.085355))*buf[5]+vec4(6.6818056,12.522166,-3.7075126,-4.104386);
+    buf[7]=mat4(vec4(-8.265602,-4.7027016,5.098234,0.7509808),vec4(8.6507845,-17.15949,16.51939,-8.884479),vec4(-4.036479,-2.3946867,-2.6055532,-1.9866527),vec4(-2.2167742,-1.8135649,-5.9759874,4.8846445))*buf[0]+mat4(vec4(6.7790847,3.5076547,-2.8191125,-2.7028968),vec4(-5.743024,-0.27844876,1.4958696,-5.0517144),vec4(13.122226,15.735168,-2.9397483,-4.101023),vec4(-14.375265,-5.030483,-6.2599335,2.9848232))*buf[1]+mat4(vec4(4.0950394,-0.94011575,-5.674733,4.755022),vec4(4.3809423,4.8310084,1.7425908,-3.437416),vec4(2.117492,0.16342592,-104.56341,16.949184),vec4(-5.22543,-2.994248,3.8350096,-1.9364246))*buf[2]+mat4(vec4(-5.900337,1.7946124,-13.604192,-3.8060522),vec4(6.6583457,31.911177,25.164474,91.81147),vec4(11.840538,4.1503043,-0.7314397,6.768467),vec4(-6.3967767,4.034772,6.1714606,-0.32874924))*buf[3]+mat4(vec4(3.4992442,-196.91893,-8.923708,2.8142626),vec4(3.4806502,-3.1846354,5.1725626,5.1804223),vec4(-2.4009497,15.585794,1.2863957,2.0252278),vec4(-71.25271,-62.441242,-8.138444,0.50670296))*buf[4]+mat4(vec4(-12.291733,-11.176166,-7.3474145,4.390294),vec4(10.805477,5.6337385,-0.9385842,-4.7348723),vec4(-12.869276,-7.039391,5.3029537,7.5436664),vec4(1.4593618,8.91898,3.5101583,5.840625))*buf[5]+vec4(2.2415268,-6.705987,-0.98861027,-2.117676);
+    buf[6]=sigmoid(buf[6]);buf[7]=sigmoid(buf[7]);
+    buf[0]=mat4(vec4(1.6794263,1.3817469,2.9625452,0.),vec4(-1.8834411,-1.4806935,-3.5924516,0.),vec4(-1.3279216,-1.0918057,-2.3124623,0.),vec4(0.2662234,0.23235129,0.44178495,0.))*buf[0]+mat4(vec4(-0.6299101,-0.5945583,-0.9125601,0.),vec4(0.17828953,0.18300213,0.18182953,0.),vec4(-2.96544,-2.5819945,-4.9001055,0.),vec4(1.4195864,1.1868085,2.5176322,0.))*buf[1]+mat4(vec4(-1.2584374,-1.0552157,-2.1688404,0.),vec4(-0.7200217,-0.52666044,-1.438251,0.),vec4(0.15345335,0.15196142,0.272854,0.),vec4(0.945728,0.8861938,1.2766753,0.))*buf[2]+mat4(vec4(-2.4218085,-1.968602,-4.35166,0.),vec4(-22.683098,-18.0544,-41.954372,0.),vec4(0.63792,0.5470648,1.1078634,0.),vec4(-1.5489894,-1.3075932,-2.6444845,0.))*buf[3]+mat4(vec4(-0.49252132,-0.39877754,-0.91366625,0.),vec4(0.95609266,0.7923952,1.640221,0.),vec4(0.30616966,0.15693925,0.8639857,0.),vec4(1.1825981,0.94504964,2.176963,0.))*buf[4]+mat4(vec4(0.35446745,0.3293795,0.59547555,0.),vec4(-0.58784515,-0.48177817,-1.0614829,0.),vec4(2.5271258,1.9991658,4.6846647,0.),vec4(0.13042648,0.08864098,0.30187556,0.))*buf[5]+mat4(vec4(-1.7718065,-1.4033192,-3.3355875,0.),vec4(3.1664357,2.638297,5.378702,0.),vec4(-3.1724713,-2.6107926,-5.549295,0.),vec4(-2.851368,-2.249092,-5.3013067,0.))*buf[6]+mat4(vec4(1.5203838,1.2212278,2.8404984,0.),vec4(1.5210563,1.2651345,2.683903,0.),vec4(2.9789467,2.4364579,5.2347264,0.),vec4(2.2270417,1.8825914,3.8028636,0.))*buf[7]+vec4(-1.5468478,-3.6171484,0.24762098,0.);
+    buf[0]=sigmoid(buf[0]);
+    return vec4(buf[0].x,buf[0].y,buf[0].z,1.);
+}
+
+void mainImage(out vec4 fragColor,in vec2 fragCoord){
+    vec2 uv=fragCoord/uResolution.xy*2.-1.;
+    uv.y*=-1.;
+    uv+=uWarp*vec2(sin(uv.y*6.283+uTime*0.5),cos(uv.x*6.283+uTime*0.5))*0.05;
+    fragColor=cppn_fn(uv,0.1*sin(0.3*uTime),0.1*sin(0.69*uTime),0.1*sin(0.44*uTime));
+}
+
+void main(){
+    vec4 col;mainImage(col,gl_FragCoord.xy);
+    col.rgb=hueShiftRGB(col.rgb,uHueShift);
+    float scanline_val=sin(gl_FragCoord.y*uScanFreq)*0.5+0.5;
+    col.rgb*=1.-(scanline_val*scanline_val)*uScan;
+    col.rgb+=(rand(gl_FragCoord.xy+uTime)-0.5)*uNoise;
+    gl_FragColor=vec4(clamp(col.rgb,0.0,1.0),1.0);
+}
+`;
+  const renderer = new Renderer({ dpr: Math.min(window.devicePixelRatio, 2), canvas });
+  const gl = renderer.gl;
+  const geometry = new Triangle(gl);
+  const program = new Program(gl, {
+    vertex, fragment,
+    uniforms: {
+      uTime: { value: 0 },
+      uResolution: { value: new Vec2() },
+      // Purple + subtle
+      uHueShift: { value: 275.0 },
+      uNoise: { value: 0.02 },
+      uScan: { value: 0.08 },
+      uScanFreq: { value: 0.06 },
+      uWarp: { value: 0.06 }
+    }
+  });
+  const mesh = new Mesh(gl, { geometry, program });
+  function resize(){
+    const w = parent.clientWidth|0, h = parent.clientHeight|0;
+    renderer.setSize(w, h);
+    program.uniforms.uResolution.value.set(w, h);
+  }
+  window.addEventListener('resize', resize, {passive:true});
+  resize();
+
+  const start = performance.now();
+  let raf = 0;
+  function loop(){
+    program.uniforms.uTime.value = ((performance.now() - start) / 1000) * 0.5; // speed = 0.5 (subtle)
+    renderer.render({ scene: mesh });
+    raf = requestAnimationFrame(loop);
+  }
+  loop();
+  document.addEventListener('visibilitychange', ()=>{ if(document.hidden) cancelAnimationFrame(raf); else loop(); });
+})();
+
 </script>
 </body>
 </html>
