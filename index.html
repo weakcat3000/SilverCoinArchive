@@ -37,11 +37,7 @@
     .ui-reopen{position:absolute;left:10px;top:10px;z-index:1100;display:none;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:6px 10px;font-weight:700;cursor:pointer;box-shadow:0 2px 14px rgba(0,0,0,.35);color:var(--text);}
     .app.ui-collapsed .ui-reopen{display:inline-block;}
     .sidebar{position:relative;background:var(--panel);border-right:1px solid var(--border);overflow:auto;width:var(--side);transition:width .28s ease;}
-    /* Dark Veil canvas sits BEHIND sidebar content */
-    .darkveil-canvas{
-      position:absolute; inset:0; z-index:0; pointer-events:none; opacity:.9;
-      filter: saturate(1.05) contrast(1.06) brightness(.95);
-    }
+    .darkveil-canvas{position:absolute; inset:0; z-index:0; pointer-events:none; opacity:.9; filter: saturate(1.05) contrast(1.06) brightness(.95);}
     .header{position:relative; z-index:1; padding:12px;border-bottom:1px solid var(--border);display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center}
     .project-title{font-weight:800;font-size:16px;display:flex;gap:8px;align-items:center}
     .toolbar{position:relative; z-index:1; display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;}
@@ -52,7 +48,6 @@
     .row-split{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:center}
     input[type="url"],select,input[type="text"],input[type="number"]{position:relative; z-index:1; width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:8px;padding:8px 10px;background:var(--panel-2);color:var(--text);}
     #mapgl, #mapleaf{height:100%;width:100%;}
-    /* (Removed dropzone entirely) */
     .layers-empty{padding:14px; position:relative; z-index:1;}
     .layer{position:relative; z-index:1; border-bottom:1px solid var(--border);background:var(--panel-2);}
     .layer+.layer{margin-top:10px;border-radius:10px;overflow:hidden;}
@@ -131,12 +126,12 @@
       border:1px solid var(--border);box-shadow:0 8px 24px rgba(0,0,0,.35);background-image:url('metal-sonar.png');
       background-size:cover;background-position:center;cursor:pointer;
     }
-    .sonar-btn.disabled{opacity:.5;filter:grayscale(60%);pointer-events:none;cursor:not-allowed}
+    .sonar-btn.disabled{opacity:.5;filter:grayscale(60%);cursor:pointer}
 
     /* ---- Sonar Modal ---- */
     .sonar-options{display:grid;gap:10px;margin-top:10px}
     .seg{display:flex;gap:8px;flex-wrap:wrap}
-    .seg .chip{padding:6px 10px;border:1px solid var(--border);border-radius:999px;background:var(--chip);cursor:pointer;font-weight:700;color:#fff;} /* white text */
+    .seg .chip{padding:6px 10px;border:1px solid var(--border);border-radius:999px;background:var(--chip);cursor:pointer;font-weight:700;color:#fff;}
     .seg .chip.active{outline:2px solid var(--accent)}
     .seg .chip.red{background:rgba(239,68,68,.18);border-color:#5b1e1e}
     .seg .chip.green{background:rgba(34,197,94,.18);border-color:#1b3e2a}
@@ -322,18 +317,41 @@ function registerIconUrl(url){ if(!url) return DOLLAR_ICON_NAME; if(urlToName.ha
 async function ensureAllIconsOnCurrentStyle(){ await ensureDollarIcon(); for(const [url,name] of urlToName.entries()) if(!mapgl.hasImage(name)) await addImageToGL(name,url); }
 mapgl.on('styleimagemissing', e=>{ const url=nameToUrl.get(e.id); if(url) addImageToGL(e.id,url); });
 
-function readdAllGroupsAfterGLStyleChange(){
-  let done=false;
-  function hydrate(){ if(done) return; done=true; (async()=>{
-    await ensureAllIconsOnCurrentStyle();
-    layerList.forEach(e=>{ createGroupOnGL(e,true); if(e.visible===false && e.glLayerIds){ e.glLayerIds.forEach(lid=>{ if(mapgl.getLayer(lid)) mapgl.setLayoutProperty(lid,'visibility','none'); }); }});
-    renderLayers(); renderGroupsVisibility();
-    // after style swap, ensure a *single* native geolocate control is attached
-    ensureGeolocateControl(true);
-  })(); }
+function readdAllGroupsAfterGLStyleChange() {
+  let done = false;
+  function hydrate() {
+    if (done) return;
+    done = true;
+    (async () => {
+      await ensureAllIconsOnCurrentStyle();
+      layerList.forEach(e => {
+        createGroupOnGL(e, true);
+        if (e.visible === false && e.glLayerIds) {
+          e.glLayerIds.forEach(lid => {
+            if (mapgl.getLayer(lid)) mapgl.setLayoutProperty(lid, 'visibility', 'none');
+          });
+        }
+      });
+      renderLayers();
+      renderGroupsVisibility();
+      
+      // DON'T recreate GPS control on style changes
+      // The existing control should persist across style changes
+    })();
+  }
   mapgl.once('load', hydrate);
   mapgl.once('idle', hydrate);
 }
+
+// Also add this CSS to hide any extra controls that might slip through
+const style = document.createElement('style');
+style.textContent = `
+/* Hide duplicate geolocate controls - keep only the first one */
+.maplibregl-ctrl-top-right .maplibregl-ctrl-group:has(.maplibregl-ctrl-geolocate) ~ .maplibregl-ctrl-group:has(.maplibregl-ctrl-geolocate) {
+  display: none !important;
+}
+`;
+document.head.appendChild(style);
 
 /* ================= App state / utils ================= */
 let layerSeq=1, featureSeq=1;
@@ -366,6 +384,18 @@ function timestampLabel(){ return new Date().toLocaleString(); }
 /* ========== helpers for filtered rendering (exclude deleted) ========== */
 function filteredFeatureCollection(entry){
   return { type:'FeatureCollection', features:(entry.data?.features||[]).filter(f=>!f?.properties?._deleted) };
+}
+
+/* ========= GHOST-LAYERS HEALERS ========= */
+function hasLiveFeatures(entry){
+  return !!(entry?.data?.features||[]).some(f => !(f?.properties?._deleted));
+}
+function normalizeDeletedFlag(entry){
+  if(entry && entry._deletedLayer && hasLiveFeatures(entry)){
+    entry._deletedLayer = false;
+    return true;
+  }
+  return false;
 }
 
 /* ========== KMZ helpers ========== */
@@ -486,8 +516,12 @@ function refreshGroupBoth(entry){
 /* ================= UI ================= */
 function renderGroupsVisibility(){
   const host=byId('grp-list'); host.innerHTML='';
-  const visibleLayers = layerList.filter(l=>!l._deletedLayer);
+  // INCLUDE layers with live features even if _deletedLayer was set; also auto-heal
+  const visibleLayers = layerList.filter(l => !l._deletedLayer || hasLiveFeatures(l));
   if(!visibleLayers.length){ host.innerHTML='<div class="hint">No groups yet.</div>'; return; }
+  let healed=false; for(const L of visibleLayers){ healed = normalizeDeletedFlag(L) || healed; }
+  if(healed) saveState();
+
   for(const entry of visibleLayers){
     const row=document.createElement('div'); row.className='grp-row';
     const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=entry.visible!==false;
@@ -500,8 +534,12 @@ function renderGroupsVisibility(){
 }
 function renderLayers(){
   const host=byId('layers'); host.innerHTML='';
-  const visibleLayers = layerList.filter(l=>!l._deletedLayer);
+  // INCLUDE layers with live features even if _deletedLayer was set; also auto-heal
+  const visibleLayers = layerList.filter(l => !l._deletedLayer || hasLiveFeatures(l));
   if(!visibleLayers.length){ host.innerHTML='<div class="layers-empty"><div class="hint">No layers yet. Upload or drop a KML/KMZ.</div></div>'; return; }
+  let healed=false; for(const L of visibleLayers){ healed = normalizeDeletedFlag(L) || healed; }
+  if(healed) saveState();
+
   for(const entry of visibleLayers){
     const visibleOnMap=entry.visible!==false;
     const wrap=document.createElement('div'); wrap.className='layer';
@@ -576,8 +614,6 @@ function moveFeatureToGroup(fromEntry, fid, targetName){
   const fIdx = fromEntry.data.features.findIndex(f=>String(f.properties?.fid)===String(fid));
   if(fIdx<0) return;
   const f = fromEntry.data.features.splice(fIdx,1)[0];
-  // tombstone in old layer?
-  // (not deleting logically; we actually moved it)
   const itIdx = (fromEntry.items||[]).findIndex(it=>String(it.fid)===String(fid));
   if(itIdx>=0) fromEntry.items.splice(itIdx,1);
   refreshGroupBoth(fromEntry);
@@ -654,7 +690,7 @@ function addCircleToLayer(centerLngLat, radius, color, layerName){
   const fid = featureSeq++; 
   const hex = (color==='green') ? '#22c55e' : '#ef4444';
   const geom = circleGeoJSON(centerLngLat[0], centerLngLat[1], radius, 96);
-  const name = `Circle ${radius}m (${(color||'red').toUpperCase()}) @ ${timestampLabel()}`; // SAME FORMAT as Sonar
+  const name = `Circle ${radius}m (${(color||'red').toUpperCase()}) @ ${timestampLabel()}`;
   const props = { fid, name, hidden:false, _gid:fid, _ts:Date.now(), _fill:hex, _fillOpacity:0.18, _stroke:hex, _strokeOpacity:0.9, _weight:2 };
   entry.data.features.push({ type:'Feature', geometry:geom, properties:props });
   entry.items = rebuildItemsFromFeatures(entry.data.features);
@@ -704,7 +740,7 @@ const PRELOAD_COINS = ['All Coin Records 2023-2024.kmz','All Coins Record 2023-2
 /* ===== Long-press style editor (Edit Mode) ===== */
 const editorEl=byId('style-editor');
 const seFill=byId('se-fill'), seFillOp=byId('se-fillop'), seOutline=byId('se-outline'), seStroke=byId('se-stroke'), seWidth=byId('se-width'), seClose=byId('se-close'), seDelete=byId('se-delete');
-let editCtx=null, editingEnabled=true; // keep edit mode on by default (custom toggle removed)
+let editCtx=null, editingEnabled=true;
 
 function openStyleEditor(entry,fid,screenX,screenY){
   if(!editingEnabled) return;
@@ -821,8 +857,10 @@ async function applyStateArray(arr){
   for (const saved of (arr||[])){
     const entry={ id:saved.id ?? layerSeq++, name:saved.name ?? 'Layer', visible:saved.visible!==false, data:saved.data, items:[], glSourceId:null, glLayerIds:[], lfGroup:null, lfLayers:null, _deletedLayer: !!saved._deletedLayer };
     await rebindFeatureIcons(entry);
-    // Rebuild items from features to fix "missing groups" issue after join
     entry.items = rebuildItemsFromFeatures(entry.data?.features || []);
+    // HEAL here during load
+    normalizeDeletedFlag(entry);
+
     layerList.push(entry);
     if(mapgl.isStyleLoaded && mapgl.isStyleLoaded()) createGroupOnGL(entry); else mapgl.once('load',()=>createGroupOnGL(entry));
     createGroupOnLeaflet(entry);
@@ -880,6 +918,8 @@ function mergeLayer(remoteL, localL){
   for(const f of (localL.data?.features||[])){ const k=featureKey(f)||`lf-${Math.random()}`; byKey.set(k, byKey.has(k)?newerFeature(byKey.get(k),f):f); }
   out.data.features=[...byKey.values()];
   out.items = rebuildItemsFromFeatures(out.data.features);
+  // HEAL after merge
+  if (out._deletedLayer && hasLiveFeatures(out)) out._deletedLayer = false;
   return out;
 }
 function layerKey(L){ return String(L?.name ?? L?.id ?? ''); }
@@ -982,7 +1022,7 @@ document.getElementById('server-continue').addEventListener('click', ()=>{
 
 /* ====================== AUDIO + SFX ====================== */
 let audioEnabled = true;
-const bgm = new Audio('Evening Traveler - Road Trip.mp3'); bgm.volume = 0.25; bgm.loop = true; /* 25% volume */
+const bgm = new Audio('Evening Traveler - Road Trip.mp3'); bgm.volume = 0.25; bgm.loop = true;
 document.addEventListener('visibilitychange', ()=>{ if(document.hidden) bgm.pause(); else if(audioEnabled) bgm.play().catch(()=>{}); });
 
 let audioCtx = null, buttonBuffer = null;
@@ -1040,44 +1080,70 @@ document.addEventListener('click', (ev)=>{ if(ev.target.closest('button')) playC
 const sonarSfx = new Audio('sonar-sound.mp3');
 
 /* ====================== GPS CONTROLS ====================== */
-/* Only native MapTiler GeolocateControl, with puck visible */
 let geolocate = null;
-function ensureGeolocateControl(forceReattach=false) {
-  if (forceReattach && geolocate) {
-    try { mapgl.removeControl(geolocate); } catch {}
-    geolocate = null;
-  }
-  if (!geolocate) {
+
+function ensureGeolocateControl() {
+  if (geolocate) return geolocate; // Don't create if we already have one
+  
+  try {
     geolocate = new maptilersdk.GeolocateControl({
       positionOptions: { enableHighAccuracy: true },
       trackUserLocation: true,
       showUserLocation: true,
       showAccuracyCircle: true
     });
+    
     mapgl.addControl(geolocate, 'top-right');
+    
+    // Add event listeners
     geolocate.on('geolocate', onFix);
-    geolocate.on('trackuserlocationstart', ()=> setGpsState('TRACKING'));
-    geolocate.on('trackuserlocationend',   ()=> setGpsState('IDLE'));
-    geolocate.on('error', (e)=> console.warn('Geolocate error:', e));
+    geolocate.on('trackuserlocationstart', () => setGpsState('TRACKING'));
+    geolocate.on('trackuserlocationend', () => setGpsState('IDLE'));
+    geolocate.on('error', (e) => console.warn('Geolocate error:', e));
+    
+  } catch (e) {
+    console.error('Failed to add geolocate control:', e);
+    geolocate = null;
   }
+  
   return geolocate;
 }
+
 let lastUserPos = null; // [lng, lat]
 const sonarBtn = byId('sonar-btn');
+
 function updateSonarEnabled(){
-  if(lastUserPos){ sonarBtn.classList.remove('disabled'); sonarBtn.title='Activate Coin Sonar'; }
-  else { sonarBtn.classList.add('disabled'); sonarBtn.title='Turn on GPS to use Sonar'; }
+  if(lastUserPos){ 
+    if (sonarBtn.classList.contains('disabled')) {
+      // First time GPS is activated
+      sonarBtn.classList.remove('disabled'); 
+      sonarBtn.title='Activate Coin Sonar';
+      console.log('Sonar now available!');
+    }
+  } else { 
+    sonarBtn.classList.add('disabled'); 
+    sonarBtn.title='Turn on GPS to use Sonar'; 
+  }
 }
+
 function setGpsState(state){ /* debug hook */ }
+
 function onFix(e){
   const lng = e?.coords?.longitude ?? e?.lng ?? e?.lngLat?.lng;
   const lat = e?.coords?.latitude  ?? e?.lat ?? e?.lngLat?.lat;
   if (typeof lng==='number' && typeof lat==='number'){
-    lastUserPos=[lng,lat]; updateSonarEnabled();
+    lastUserPos=[lng,lat]; 
+    updateSonarEnabled();
+    
+    // Auto-enable sonar button when GPS activates
+    if (sonarBtn.classList.contains('disabled')) {
+      sonarBtn.classList.remove('disabled');
+      sonarBtn.title = 'Activate Coin Sonar';
+      console.log('Sonar activated - GPS location acquired');
+    }
   }
 }
 
-/* Attach native geolocate once map is ready */
 mapgl.on('load', ()=> { ensureGeolocateControl(); });
 
 /* ===== Sonar UI ===== */
@@ -1092,7 +1158,15 @@ let sonarColor  = 'red';
 
 function openSonar(){ sonarModal.classList.add('visible'); appEl.classList.add('blocked-by-modal'); }
 function closeSonar(){ sonarModal.classList.remove('visible'); appEl.classList.remove('blocked-by-modal'); scanWait.classList.remove('visible'); }
-sonarBtn.addEventListener('click', ()=>{ if(!lastUserPos){ alert('Please enable GPS (top-right button) first.'); return; } openSonar(); });
+
+sonarBtn.addEventListener('click', ()=>{ 
+  if(!lastUserPos){ 
+    alert('Please enable GPS to use Sonar\n\nTurn on GPS using the location button in the top-right corner of the map, then try again.'); 
+    return; 
+  } 
+  openSonar(); 
+});
+
 sonarModal.addEventListener('click', (e)=>{ if(e.target === sonarModal) closeSonar(); });
 function setActiveChip(container, chip){ container.querySelectorAll('.chip').forEach(c=>c.classList.remove('active')); chip.classList.add('active'); }
 radiusSeg.addEventListener('click', (e)=>{ const btn=e.target.closest('.chip'); if(!btn) return; sonarRadius=parseInt(btn.dataset.radius,10)||50; setActiveChip(radiusSeg,btn); });
