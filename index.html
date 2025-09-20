@@ -540,15 +540,15 @@ function createGroupOnGL(entry, clearIfExists){
     const notHidden=['all',['!=',['get','hidden'],true],['!=',['get','_deleted'],true]];
 
     mapgl.addLayer({ id:fillId, type:'fill', source:srcId,
-      filter:['all',notHidden,['in',['geometry-type'],['literal',['Polygon','MultiPolygon']]]],
+      filter:['all', notHidden, ['match', ['geometry-type'], ['Polygon','MultiPolygon'], true, false]],
       paint:{ 'fill-color':['coalesce',['get','_fill'],'#ffffff'], 'fill-opacity':['coalesce',['get','_fillOpacity'],0.2] } });
 
     mapgl.addLayer({ id:polyEdgeId, type:'line', source:srcId,
-      filter:['all',notHidden,['in',['geometry-type'],['literal',['Polygon','MultiPolygon']]]],
+      filter:['all', notHidden, ['match', ['geometry-type'], ['Polygon','MultiPolygon'], true, false]],
       paint:{ 'line-color':['coalesce',['get','_stroke'],'#ffffff'], 'line-width':['coalesce',['get','_weight'],2], 'line-opacity':['coalesce',['get','_strokeOpacity'],0.2] } });
 
     mapgl.addLayer({ id:lineId, type:'line', source:srcId,
-      filter:['all',notHidden,['in',['geometry-type'],['literal',['LineString','MultiLineString']]]],
+      filter:['all', notHidden, ['match', ['geometry-type'], ['LineString','MultiLineString'], true, false]],
       paint:{ 'line-color':['coalesce',['get','_stroke'],'#ffffff'], 'line-width':['coalesce',['get','_weight'],2], 'line-opacity':['coalesce',['get','_strokeOpacity'],0.2] } });
 
     mapgl.addLayer({ id:iconId, type:'symbol', source:srcId,
@@ -723,7 +723,14 @@ function renderLayers(){
 }
 
 
-function zoomToFeature(entry,fid){ const f=entry.data.features.find(x=>x.properties&&x.properties.fid===fid); if(!f) return; const b=bboxOfFeature(f); if(engine==='gl') mapgl.fitBounds(b,{padding:40,duration:600}); else mapleaf.fitBounds([[b[0][1],b[0][0]],[b[1][1],b[1][0]]],{padding:[40,40]}); }
+function zoomToFeature(entry, fid){
+  const f = entry.data.features.find(x => x.properties && String(x.properties.fid) === String(fid));
+  if(!f) return;
+  const b = bboxOfFeature(f);
+  if(engine==='gl') mapgl.fitBounds(b,{padding:40,duration:600});
+  else mapleaf.fitBounds([[b[0][1],b[0][0]],[b[1][1],b[1][0]]],{padding:[40,40]});
+}
+
 
 /* === Move feature to another group === */
 function getOrCreateLayerByName(name){
@@ -740,23 +747,60 @@ function getOrCreateLayerByName(name){
 function rebuildItemsFromFeatures(features){
   return (features||[])
     .filter(f=>!f.properties?._deleted)
-    .map(f=>({ fid:f.properties?.fid, name:f.properties?.name||'Feature', label:(f.geometry?.type==='Point')?(f.properties?._label||'•'):'•', visible:!(f.properties?.hidden) }));
+    .map(f=>({
+      fid: String(f.properties?.fid),
+      name: f.properties?.name || 'Feature',
+      label: (f.geometry?.type==='Point') ? (f.properties?._label||'•') : '•',
+      visible: !(f.properties?.hidden)
+    }))
 }
+
 function moveFeatureToGroup(fromEntry, fid, targetName){
-  const fIdx = fromEntry.data.features.findIndex(f=>String(f.properties?.fid)===String(fid));
-  if(fIdx<0) return;
-  const f = fromEntry.data.features.splice(fIdx,1)[0];
-  const itIdx = (fromEntry.items||[]).findIndex(it=>String(it.fid)===String(fid));
-  if(itIdx>=0) fromEntry.items.splice(itIdx,1);
+  const idx = fromEntry.data.features.findIndex(f => String(f.properties?.fid) === String(fid));
+  if (idx < 0) return;
+
+  const f = fromEntry.data.features[idx];
+  const key = String(f.properties?._gid ?? f.properties?.fid ?? fid);
+
+  // 1) Remove live feature from old layer
+  fromEntry.data.features.splice(idx, 1);
+
+  // 2) Add tombstone to old layer to signal delete across clients
+  fromEntry.data.features.push({
+    type: 'Feature',
+    geometry: { type:'Point', coordinates:[0,0] },
+    properties: {
+      fid: key, _gid: key,
+      _deleted: true,
+      _ts: Date.now(),
+      name: (f.properties?.name || 'Moved feature (tombstone)')
+    }
+  });
+  fromEntry.items = rebuildItemsFromFeatures(fromEntry.data.features);
   refreshGroupBoth(fromEntry);
 
+  // 3) Add the live feature to the target layer (preserve _gid)
   const toEntry = getOrCreateLayerByName(targetName);
-  toEntry.data.features.push(f);
+  const moved = {
+    type: 'Feature',
+    geometry: f.geometry,
+    properties: {
+      ...f.properties,
+      fid: key,           // keep fid stringified + stable
+      _gid: key,
+      hidden: false,
+      _ts: Date.now()     // bump timestamp so the move wins
+    }
+  };
+  toEntry.data.features.push(moved);
   toEntry.items = rebuildItemsFromFeatures(toEntry.data.features);
   refreshGroupBoth(toEntry);
 
-  renderGroupsVisibility(); renderLayers(); saveState();
+  renderGroupsVisibility();
+  renderLayers();
+  saveState();
 }
+
 
 /* ================= Loaders ================= */
 async function loadKMZFile(file,forceGroupName){ try{ const zip=await JSZip.loadAsync(file); const kmlEntry=Object.values(zip.files).find(f=>f.name.toLowerCase().endsWith('.kml')); if(!kmlEntry){ alert('No .kml found inside KMZ: '+file.name); return; } const assetMap=await buildKmzAssetMap(zip); const text=await kmlEntry.async('text'); addKmlText(text,file.name,{assetMap},forceGroupName); }catch(e){ console.error(e); alert('Failed to read KMZ: '+file.name); } }
@@ -774,7 +818,7 @@ function addKmlText(text,filename,opts,forceGroupName){
   for(const gname of Object.keys(grouped)){
     const features=[], items=[];
     for(const idx of grouped[gname]){
-      const f=gj.features[idx], m=metaList[idx], fid=featureSeq++;
+      const f = gj.features[idx], m = metaList[idx], fid = String(featureSeq++);
       const props=f.properties||{}; const itemName=m.name||props.name||props.Name||props.title||('Feature '+fid);
 
       // Force default style: white fill + white outline @ 20% opacity
@@ -819,7 +863,7 @@ byId('add-layer').onclick=function(){ const entry={ id:layerSeq++, name:'Untitle
 /* ======= Circles helper (separate from Sonar) ======= */
 function addCircleToLayer(centerLngLat, radius, color, layerName){
   const entry = getOrCreateLayerByName(layerName);
-  const fid = featureSeq++; 
+  const fid = String(featureSeq++);
   const hex = (color==='green') ? '#22c55e' : '#ef4444';
   const geom = circleGeoJSON(centerLngLat[0], centerLngLat[1], radius, 96);
   const name = `Circle ${radius}m (${(color||'red').toUpperCase()}) @ ${timestampLabel()}`;
@@ -873,40 +917,37 @@ const PRELOAD_COINS = ['All Coin Records 2023-2024.kmz','All Coins Record 2023-2
 const editorEl=byId('style-editor');
 const seFill=byId('se-fill'), seFillOp=byId('se-fillop'), seOutline=byId('se-outline'), seStroke=byId('se-stroke'), seWidth=byId('se-width'), seClose=byId('se-close'), seDelete=byId('se-delete');
 let editCtx=null, editingEnabled=false;
+const editToggle = document.getElementById('edit-toggle');
 
-// === Edit toggle (no localStorage) ===
-(function(){
-  const editToggle = document.getElementById('edit-toggle');
+function reflectEditUI(){
   if (!editToggle) return;
+  editToggle.textContent = 'Edit: ' + (editingEnabled ? 'ON' : 'OFF');
+  editToggle.classList.toggle('off', !editingEnabled);
+}
 
-  function reflectEditUI(){
-    editToggle.textContent = 'Edit: ' + (editingEnabled ? 'ON' : 'OFF');
-    editToggle.classList.toggle('off', !editingEnabled);
-  }
+// initial paint
+reflectEditUI();
 
-  // initial paint
-  reflectEditUI();
-
+// Toggle button wiring
+if (editToggle){
   editToggle.addEventListener('click', ()=>{
     editingEnabled = !editingEnabled;
-    if (!editingEnabled && typeof closeStyleEditor === 'function') {
-      closeStyleEditor();
-    }
+    if (!editingEnabled) closeStyleEditor();
     reflectEditUI();
   });
-})();
+}
 
-
-// Optional: keyboard shortcut (E) to toggle
+// Keyboard shortcut (E)
 document.addEventListener('keydown', (e)=>{
   if (e.key.toLowerCase() === 'e' && !e.metaKey && !e.ctrlKey && !e.altKey){
     if (document.activeElement && /input|textarea|select/i.test(document.activeElement.tagName)) return;
     editingEnabled = !editingEnabled;
-    if(!editingEnabled) closeStyleEditor();
+    if (!editingEnabled) closeStyleEditor();
     reflectEditUI();
     try{ localStorage.setItem('sqkii-editing', editingEnabled ? '1' : '0'); }catch{}
   }
 });
+
 
 
 function openStyleEditor(entry,fid,screenX,screenY){
@@ -965,7 +1006,7 @@ seDelete.addEventListener('click', ()=>{
   closeStyleEditor();
 });
 
-const LONGPRESS_MS = 850;
+const LONGPRESS_MS = 500;
 function attachLongPressGL(layerId, entry){
   let t=null;
   function clear(){ if(t){ clearTimeout(t); t=null; } }
@@ -1018,30 +1059,72 @@ function clearAllLayers(){
   layerList.length = 0;
   renderGroupsVisibility(); renderLayers();
 }
+
 async function applyStateArray(arr){
   clearAllLayers();
   await ensureAllIconsOnCurrentStyle();
-  for (const saved of (arr||[])){
-    const entry={ id:saved.id ?? layerSeq++, name:saved.name ?? 'Layer', visible:saved.visible!==false, data:saved.data, items:[], glSourceId:null, glLayerIds:[], lfGroup:null, lfLayers:null, _deletedLayer: !!saved._deletedLayer };
+
+  for (const saved of (arr || [])){
+    const entry = {
+      id: (saved.id != null ? saved.id : (layerSeq++)),
+      name: saved.name ?? 'Layer',
+      visible: saved.visible !== false,
+      data: saved.data,
+      items: [],
+      glSourceId: null,
+      glLayerIds: [],
+      lfGroup: null,
+      lfLayers: null,
+      _deletedLayer: !!saved._deletedLayer
+    };
+
+    // Normalize identifiers to strings (prevents GL/Leaflet promoteId mismatches)
+    for (const f of (entry.data?.features || [])) {
+      if (f?.properties?.fid   != null) f.properties.fid   = String(f.properties.fid);
+      if (f?.properties?._gid  != null) f.properties._gid  = String(f.properties._gid);
+    }
+
     await rebindFeatureIcons(entry);
     entry.items = rebuildItemsFromFeatures(entry.data?.features || []);
-    // HEAL here during load
+
+    // Heal ghost-layer flag if live features exist
     normalizeDeletedFlag(entry);
 
     layerList.push(entry);
-    if(mapgl.isStyleLoaded && mapgl.isStyleLoaded()) createGroupOnGL(entry); else mapgl.once('load',()=>createGroupOnGL(entry));
+
+    if (mapgl.isStyleLoaded && mapgl.isStyleLoaded()) {
+      createGroupOnGL(entry);
+    } else {
+      mapgl.once('load', () => createGroupOnGL(entry));
+    }
     createGroupOnLeaflet(entry);
-    if(entry.visible === false){
-      (entry.glLayerIds||[]).forEach(lid=>{ if(mapgl.getLayer(lid)) mapgl.setLayoutProperty(lid,'visibility','none'); });
-      if(entry.lfGroup) mapleaf.removeLayer(entry.lfGroup);
+
+    if (entry.visible === false){
+      (entry.glLayerIds || []).forEach(lid => {
+        if (mapgl.getLayer(lid)) mapgl.setLayoutProperty(lid, 'visibility', 'none');
+      });
+      if (entry.lfGroup) mapleaf.removeLayer(entry.lfGroup);
     }
   }
-  const allNumericFids = layerList.flatMap(l => (l.data?.features||[]).map(f => Number(f.properties?.fid)||0));
-  featureSeq = Math.max(0, ...allNumericFids, 0) + 1;
-  layerSeq = Math.max( ...layerList.map(l=>Number(l.id)||0), 0 ) + 1;
 
-  renderGroupsVisibility(); renderLayers();
+  // Recompute seq counters (use only numeric fids for featureSeq)
+  const numericFids = layerList
+    .flatMap(l => (l.data?.features || []))
+    .map(f => {
+      const id = f?.properties?.fid;
+      if (typeof id === 'number') return id;
+      if (typeof id === 'string' && /^\d+$/.test(id)) return parseInt(id, 10);
+      return NaN;
+    })
+    .filter(Number.isFinite);
+
+  featureSeq = Math.max(0, ...(numericFids.length ? numericFids : [0])) + 1;
+  layerSeq   = Math.max(0, ...layerList.map(l => Number(l.id) || 0)) + 1;
+
+  renderGroupsVisibility();
+  renderLayers();
 }
+
 
 /* =======================
    === SUPABASE INTEGRATION (merge-safe) ===
@@ -1089,13 +1172,67 @@ function mergeLayer(remoteL, localL){
   if (out._deletedLayer && hasLiveFeatures(out)) out._deletedLayer = false;
   return out;
 }
-function layerKey(L){ return String(L?.name ?? L?.id ?? ''); }
+
+
+function layerKeyId(L){ return (L && L.id != null) ? String(L.id) : ''; }
+function layerKeyName(L){ return (L?.name || '').trim().toLowerCase(); }
+
 function mergeStates(remoteArr, localArr){
-  const out=new Map();
-  for(const L of (remoteArr||[])) out.set(layerKey(L), L);
-  for(const L of (localArr||[])){ const k=layerKey(L); out.set(k, out.has(k)?mergeLayer(out.get(k),L):L); }
-  return [...out.values()];
+  const byId   = new Map();
+  const byName = new Map();
+
+  // index remote by id and name (for matching)
+  for (const L of (remoteArr || [])) {
+    const kid = layerKeyId(L);
+    const knm = layerKeyName(L);
+    if (kid) byId.set(kid, L);
+    if (knm) byName.set(knm, L);
+  }
+
+  const merged = [];
+  const seenIds   = new Set();
+  const seenNames = new Set();
+
+  function markSeen(L){
+    const kid = layerKeyId(L); if (kid) seenIds.add(kid);
+    const knm = layerKeyName(L); if (knm) seenNames.add(knm);
+  }
+  function addOnceByKey(L){
+    const kid = layerKeyId(L);
+    const knm = layerKeyName(L);
+    if ((kid && seenIds.has(kid)) || (knm && seenNames.has(knm))) return;
+    merged.push(L);
+    markSeen(L);
+  }
+
+  // merge locals with matching remotes (id first, else name)
+  for (const localL of (localArr || [])) {
+    const rid = layerKeyId(localL) ? byId.get(layerKeyId(localL)) : null;
+    const rnm = !rid && layerKeyName(localL) ? byName.get(layerKeyName(localL)) : null;
+
+    if (rid || rnm) {
+      const remoteL = rid || rnm;
+      const m = mergeLayer(remoteL, localL);
+
+      // keep indices up to date for subsequent matches
+      const kid = layerKeyId(m); if (kid) byId.set(kid, m);
+      const knm = layerKeyName(m); if (knm) byName.set(knm, m);
+
+      addOnceByKey(m);
+    } else {
+      // brand-new local layer
+      addOnceByKey(localL);
+      const kid = layerKeyId(localL); if (kid) byId.set(kid, localL);
+      const knm = layerKeyName(localL); if (knm) byName.set(knm, localL);
+    }
+  }
+
+  // add remaining remote layers not seen
+  for (const L of (remoteArr || [])) addOnceByKey(L);
+
+  return merged;
 }
+
 
 let suppressNextRemoteApply = false;
 
