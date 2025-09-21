@@ -17,6 +17,9 @@
   <script src="https://unpkg.com/@tmcw/togeojson@4.7.0/dist/togeojson.umd.js"></script>
   <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
 
+  <!-- Turf.js -->
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
+
   <!-- Supabase JS (UMD) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.5/dist/umd/supabase.min.js"></script>
 
@@ -349,7 +352,7 @@ const mapleaf = L.map('mapleaf', {
 // Default OSM tiles, but with Retina + higher logical max zoom
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxNativeZoom: 19,  // native limit of OSM server
-  maxZoom: 21,        // let Leaflet scale beyond native
+  maxZoom: 19,      // let Leaflet scale beyond native
   detectRetina: true, // request higher-detail tiles for Hi-DPI
   attribution: '&copy; OpenStreetMap contributors'
 }).addTo(mapleaf);
@@ -948,7 +951,7 @@ function addCircleToLayer(centerLngLat, radius, color, layerName){
   const entry = getOrCreateLayerByName(layerName);
   const fid = String(featureSeq++);
   const hex = (color==='green') ? '#22c55e' : '#ef4444';
-  const geom = circleGeoJSON(centerLngLat[0], centerLngLat[1], radius, 96);
+  const geom = turf.circle([centerLngLat[0], centerLngLat[1]], radius, {steps:128, units:'meters'}).geometry; 
   const name = `Circle ${radius}m (${(color||'red').toUpperCase()}) @ ${timestampLabel()}`;
   const props = { fid, name, hidden:false, _gid:fid, _ts:Date.now(), _fill:hex, _fillOpacity:0.18, _stroke:hex, _strokeOpacity:0.9, _weight:2 };
   entry.data.features.push({ type:'Feature', geometry:geom, properties:props });
@@ -956,9 +959,9 @@ function addCircleToLayer(centerLngLat, radius, color, layerName){
   refreshGroupBoth(entry);
   applyVisibility(entry);
   renderLayers(); renderGroupsVisibility(); saveState();
-  const b=bboxOfFeature({geometry:geom});
-  if(engine==='gl') mapgl.fitBounds(b,{padding:40,duration:500}); else mapleaf.fitBounds([[b[0][1],b[0][0]],[b[1][1],b[1][0]]],{padding:[40,40]});
+  ((b)=>engine==='gl'?mapgl.fitBounds([[b[0],b[1]],[b[2],b[3]]],{padding:40,duration:500}):mapleaf.fitBounds([[b[1],b[0]],[b[3],b[2]]],{padding:[40,40]}))(turf.bbox(geom));
 }
+
 
 /* Draw Circle tool */
 const drawBtn = byId('draw-circle'), drawBox = byId('draw-inputs');
@@ -1184,36 +1187,36 @@ async function applyStateArray(arr){
     // ...build entry...
     await rebindFeatureIcons(entry);
     entry.items = rebuildItemsFromFeatures(entry.data?.features || []);
-    normalizeDeletedFlag(entry);
+    
+    // Apply revival logic during restore: if deleted layer has live features, revive it
+    if (entry._deletedLayer && hasLiveFeatures(entry)) {
+      entry._deletedLayer = false;
+    }
 
     // ensure no id collisions from old saves / other clients
     ensureUniqueLayerId(entry);
     layerList.push(entry);
 
-
-    // IMPORTANT: force clean rebuilds to avoid ghost layers
-    // Replace this section in applyStateArray:
-    glReady(() => createGroupOnGL(entry, /* clearIfExists */ true));
-    createGroupOnLeaflet(entry, /* rebuild */ true);
-
-    // With this:
-    await new Promise(resolve => {
-      glReady(() => {
-        createGroupOnGL(entry, /* clearIfExists */ true);
-        resolve();
+    // Only create map components for non-deleted layers
+    if (!entry._deletedLayer) {
+      await new Promise(resolve => {
+        glReady(() => {
+          createGroupOnGL(entry, /* clearIfExists */ true);
+          resolve();
+        });
       });
-    });
-    createGroupOnLeaflet(entry, /* rebuild */ true);
+      createGroupOnLeaflet(entry, /* rebuild */ true);
 
-    // Make restore deterministic: enforce visibility and refresh both engines
-    applyVisibility(entry);
-    refreshGroupBoth(entry);
+      // Make restore deterministic: enforce visibility and refresh both engines
+      applyVisibility(entry);
+      refreshGroupBoth(entry);
 
-    if (entry.visible === false){
-      (entry.glLayerIds || []).forEach(lid => {
-        if (mapgl.getLayer(lid)) mapgl.setLayoutProperty(lid, 'visibility', 'none');
-      });
-      if (entry.lfGroup) mapleaf.removeLayer(entry.lfGroup);
+      if (entry.visible === false){
+        (entry.glLayerIds || []).forEach(lid => {
+          if (mapgl.getLayer(lid)) mapgl.setLayoutProperty(lid, 'visibility', 'none');
+        });
+        if (entry.lfGroup) mapleaf.removeLayer(entry.lfGroup);
+      }
     }
   }
 
@@ -1233,6 +1236,53 @@ async function applyStateArray(arr){
 
   renderGroupsVisibility();
   renderLayers();
+}function getOrCreateLayerByName(name){
+  // First check if there's a non-deleted layer with this name
+  let entry = layerList.find(l => l.name === name && !l._deletedLayer);
+  if(entry) return entry;
+  
+  // Check if there's a deleted layer with this name that we should revive
+  const deletedEntry = layerList.find(l => l.name === name && l._deletedLayer);
+  if(deletedEntry){
+    // Revive the deleted layer
+    deletedEntry._deletedLayer = false;
+    deletedEntry.visible = true;
+    
+    // Clear out old tombstone features but keep the layer structure
+    deletedEntry.data = deletedEntry.data || {type:'FeatureCollection',features:[]};
+    deletedEntry.data.features = deletedEntry.data.features.filter(f => !f.properties._deleted);
+    deletedEntry.items = rebuildItemsFromFeatures(deletedEntry.data.features);
+    
+    // Recreate the map components
+    glReady(() => createGroupOnGL(deletedEntry, /* clearIfExists */ true));
+    createGroupOnLeaflet(deletedEntry, /* rebuild */ true);
+    
+    renderGroupsVisibility(); 
+    renderLayers(); 
+    saveState();
+    return deletedEntry;
+  }
+  
+  // Only create a new layer if no existing layer (deleted or not) has this name
+  entry = {
+    id: layerSeq++,
+    name,
+    visible: true,
+    data: {type:'FeatureCollection',features:[]},
+    items: [],
+    glSourceId: null,
+    glLayerIds: [],
+    lfGroup: null,
+    lfLayers: null
+  };
+  ensureUniqueLayerId(entry);
+  layerList.push(entry);
+
+  glReady(() => createGroupOnGL(entry, /* clearIfExists */ true));
+  createGroupOnLeaflet(entry, /* rebuild */ true);
+
+  renderGroupsVisibility(); renderLayers(); saveState();
+  return entry;
 }
 
 
@@ -1607,7 +1657,7 @@ function addSonarCircle(centerLngLat, radius, color){
   const entry = getOrCreateSonarLayer();
   const fid = `sonar-${clientId}-${Date.now()}-${Math.floor(Math.random()*1e6)}`;
   const hex = (color==='green') ? '#22c55e' : '#ef4444';
-  const geom = circleGeoJSON(centerLngLat[0], centerLngLat[1], radius, 96);
+  const geom = turf.circle([centerLngLat[0], centerLngLat[1]], radius, {steps:128, units:'meters'}).geometry; 
   const name = `Sonar ${radius}m (${color.toUpperCase()}) @ ${timestampLabel()}`;
   const props = { fid, name, hidden:false, _gid:fid, _ts:Date.now(), _fill:hex, _fillOpacity:0.18, _stroke:hex, _strokeOpacity:0.9, _weight:2 };
   entry.data.features.push({ type:'Feature', geometry:geom, properties:props });
@@ -1615,9 +1665,9 @@ function addSonarCircle(centerLngLat, radius, color){
   refreshGroupBoth(entry);
   applyVisibility(entry);
   renderLayers(); renderGroupsVisibility(); saveState();
-  const b=bboxOfFeature({geometry:geom});
-  if(engine==='gl') mapgl.fitBounds(b,{padding:40,duration:500}); else mapleaf.fitBounds([[b[0][1],b[0][0]],[b[1][1],b[1][0]]],{padding:[40,40]});
+  ((b)=>engine==='gl'?mapgl.fitBounds([[b[0],b[1]],[b[2],b[3]]],{padding:40,duration:500}):mapleaf.fitBounds([[b[1],b[0]],[b[3],b[2]]],{padding:[40,40]}))(turf.bbox(geom));
 }
+
 scanNow.addEventListener('click', async ()=>{
   if(!lastUserPos){ alert('GPS not ready.'); return; }
   try{ sonarSfx.currentTime=0; if(audioEnabled) sonarSfx.play(); }catch{}
