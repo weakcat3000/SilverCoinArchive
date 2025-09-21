@@ -26,209 +26,122 @@
   <!-- Preload button click sound for instant play -->
   <link rel="preload" href="button.mp3" as="audio" />
 
+  <!-- ===== Condensed styles ===== -->
   <style>
-    :root{
-      --panel:#0f1115; --panel-2:#12151b; --muted:#98a2b3; --text:#e5e7eb;
-      --accent:#60a5fa; --border:#1f2430; --bg:#0b0d11; --chip:#1c212e; --side:300px;
-      --red:#ef4444; --green:#22c55e; --blue:#3b82f6;
-    }
-
-    /* ===== Slim dark scrollbars (Chrome/Edge/Safari) ===== */
-    *::-webkit-scrollbar{
-      width: 6px;              /* thinner */
-      height: 6px;
-    }
-    *::-webkit-scrollbar-track{
-      background: var(--bg);   /* dark track */
-    }
-    *::-webkit-scrollbar-thumb{
-      background: var(--border);            /* muted thumb */
-      border-radius: 8px;
-      border: 2px solid transparent;        /* creates a little inset */
-      background-clip: padding-box;
-    }
-    *::-webkit-scrollbar-thumb:hover{
-      background: #2a3243;     /* slightly brighter on hover */
-    }
-
-    /* Slightly wider on the sidebar only when hovered (nice UX) */
-    .sidebar::-webkit-scrollbar{ width: 6px; }
-    .sidebar:hover::-webkit-scrollbar{ width: 10px; }
-
-    /* ===== Firefox ===== */
-    html, body, .sidebar, .grp-list, #layers{
-      scrollbar-width: thin;                      /* slim */
-      scrollbar-color: var(--border) var(--bg);   /* thumb / track */
-    }
-
-    /* Draw Circle inputs: 2 long rows */
-    .draw-grid{
-      display:grid;
-      grid-template-columns: 1fr auto; /* wide input + small Add button */
-      gap:8px;
-    }
-    .draw-grid #draw-coord{
-      grid-column: 1 / -1; /* make lat,lng span full width on its own row */
-    }
-
-    html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;}
-    .app{position:relative;display:grid;grid-template-columns: var(--side) 1fr;height:100vh;transition:grid-template-columns .28s ease;}
-    .ui-reopen{position:absolute;left:10px;top:10px;z-index:1100;display:none;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:6px 10px;font-weight:700;cursor:pointer;box-shadow:0 2px 14px rgba(0,0,0,.35);color:var(--text);}
-    .app.ui-collapsed .ui-reopen{display:inline-block;}
-    .sidebar{position:relative;background:var(--panel);border-right:1px solid var(--border);overflow:auto;width:var(--side);transition:width .28s ease;isolation:isolate;}
-    .darkveil-canvas{
-      position:absolute; inset:0;
-      z-index:5;                 /* put above UI blocks so it's visible */
-      pointer-events:none;
-      opacity:.35;               /* subtle strength */
-      mix-blend-mode:overlay;    /* try soft-light / multiply if you prefer */
-      filter:saturate(1.05) contrast(1.06) brightness(.98);
-    }
-    .header{position:relative; z-index:1; padding:12px;border-bottom:1px solid var(--border);display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center}
-    .project-title{font-weight:800;font-size:16px;display:flex;gap:8px;align-items:center}
-    .toolbar{position:relative; z-index:1; display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;}	
-    .header .toolbar{ margin-top:0; }
-    .btn{background:var(--chip);border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-weight:600;cursor:pointer;color:var(--text);}
-    .btn.small{padding:4px 8px;font-size:12px;}
-    .hint{color:var(--muted);font-size:12px;}
-    .row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center}
-    .row-split{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:center}
-    input[type="url"],select,input[type="text"],input[type="number"]{position:relative; z-index:1; width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:8px;padding:8px 10px;background:var(--panel-2);color:var(--text);}
-    #mapgl, #mapleaf{height:100%;width:100%;}
-    .layers-empty{padding:14px; position:relative; z-index:1;}
-    .layer{position:relative; z-index:1; border-bottom:1px solid var(--border);background:var(--panel-2);}
-    .layer+.layer{margin-top:10px;border-radius:10px;overflow:hidden;}
-    .layer-head{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px;padding:10px 12px;}
-    .layer-head .title{font-weight:700;}
-    .layer-head .actions{display:flex;gap:6px;flex-wrap:wrap;}
-    .import-line{padding:8px 12px;background:#0e1420;border-top:1px solid var(--border);}
-    .import-line .link{color:var(--accent);font-weight:600;cursor:pointer;}
-    .feature{display:grid;grid-template-columns:auto 1fr auto auto;gap:8px;align-items:center;padding:8px 12px;border-top:1px solid var(--border);}
-    .feature .name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;}
-    .group-bullet{width:22px;height:22px;border-radius:999px;display:grid;place-items:center;border:1px solid #2a3243;background:#11161f;color:#fff;font-size:12px;font-weight:800;}
-    .toggle{display:inline-grid;place-items:center;width:16px;height:16px;border:1px solid #2a3243;border-radius:4px;background:#0f141d;cursor:pointer;}
-    .toggle.checked{background:#16a34a;border-color:#16a34a;}
-    details.grp{position:relative; z-index:1; margin:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--panel-2);}
-    details.grp>summary{list-style:none;padding:10px 12px;cursor:pointer;font-weight:700;}
-    details.grp>summary::-webkit-details-marker{display:none;}
-    .grp-list{padding:8px 12px;display:grid;gap:6px;max-height:220px;overflow:auto;}
-    .yt-portrait{width:240px;aspect-ratio:9/16;background:#000;border-radius:12px;overflow:hidden;margin:8px auto;}
-    @media (min-width:480px){ .yt-portrait{ width:260px; } }
-    .yt-portrait>iframe{width:100%;height:100%;display:block;border:0}
-    .ui-hide{grid-column:3;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:6px 10px;font-weight:700;cursor:pointer;box-shadow:0 2px 14px rgba(0,0,0,.35);color:var(--text);}
-    a{color:var(--accent);}
-    .maplibregl-popup-content{background:#0f1115;color:#e5e7eb;border:1px solid #1f2430;border-radius:12px;}
-    .maplibregl-popup-tip{border-top-color:#0f1115 !important;border-bottom-color:#0f1115 !important;border-left-color:#0f1115 !important;border-right-color:#0f1115 !important;}
-    .leaflet-popup-content-wrapper{background:#0f1115;color:#e5e7eb;border:1px solid #1f2430;border-radius:12px;}
-    .leaflet-popup-tip{background:#0f1115;}
-    .style-editor{position:fixed;z-index:1200;display:none;min-width:240px;max-width:280px;background:#0f1115;color:#e5e7eb;border:1px solid #1f2430;border-radius:12px;padding:12px;box-shadow:0 12px 32px rgba(0,0,0,.45);}
-    .style-editor h4{margin:0 0 8px 0;font-size:14px;}
-    .style-row{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:center;margin:8px 0;}
-    .style-row input[type="color"],.style-row input[type="number"],.style-row input[type="range"]{width:100%;background:#12151b;border:1px solid #1f2430;color:#e5e7eb;border-radius:8px;padding:6px 8px;}
-    .style-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:6px;}
-    .style-actions .btn{padding:6px 10px;}
-    .btn.danger{background:rgba(239,68,68,.1);border-color:#7f1d1d;color:#fecaca}
-
-    /* Eye toggle button for feature visibility */
-    .eye-btn{
-      display:inline-grid; place-items:center;
-      width:38px; height:30px; border:1px solid var(--border);
-      border-radius:8px; background:var(--panel-2); cursor:pointer;
-    }
-    .eye-btn svg{ width:18px; height:18px; stroke:#e5e7eb; fill:none; stroke-width:2; }
-    .eye-btn.off{ opacity:.6; }
-
-    /* Smaller feature rows in the layer list */
-    .feature { padding: 6px 12px; }              /* a bit tighter vertically */
-    .feature .name { font-size: 13px; line-height: 1.25; }
-    .group-bullet { width: 18px; height: 18px; font-size: 11px; } /* optional: smaller dot */
-
-    /* Make the Edit button match Hide UI */
-    /* Make the Edit toggle visually match Hide UI */
-    #edit-toggle{
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 10px;          /* same as .ui-hide */
-      padding: 6px 10px;            /* same as .ui-hide */
-      font-weight: 700;             /* same as .ui-hide */
-      box-shadow: 0 2px 14px rgba(0,0,0,.35); /* optional: match .ui-hide */
-    }
-    #edit-toggle.off{ opacity:.6; } /* your muted/off state */
-
-    /* compact feature rows */
-    .feature{grid-template-columns:14px 1fr auto auto;padding:2px 8px;gap:4px}
-    .feature .name{font-size:11px;line-height:1.15}
-    .group-bullet{width:14px;height:14px;font-size:9px}
-    .btn.small{padding:1px 6px;font-size:11px;line-height:1.05}
-    .eye-btn{width:30px;height:22px}
-    .eye-btn svg{width:14px;height:14px}
-
-
-    /* ---- Server Code Modal + blocking ---- */
-    .modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;place-items:center;z-index:2000;}
-    .modal.visible{display:grid;}
-    .modal-card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:16px;max-width:380px;width:92%;box-shadow:0 12px 40px rgba(0,0,0,.5);}
-    .modal-card h3{margin:0 0 8px 0;font-size:16px}
-    .modal-row{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:8px}
-    .modal small{color:var(--muted)}
-    .modal .err{color:#f87171;font-weight:700;margin-top:6px;display:none}
-    .app.blocked-by-modal{pointer-events:none;}
-    .modal, .modal *{pointer-events:auto;}
-
-    /* layout for the Map style row */
-    .mapstyle-row{
-      position:relative; z-index:1;
-      padding:12px;
-      border-bottom:1px solid var(--border);
-      display:grid;
-      grid-template-columns: 1fr auto;
-      gap:14px;
-      align-items:start;
-    }
-    .mapstyle-right{ color:var(--muted); font-size:12px; text-align:right; line-height:1.35; max-width:240px; padding-top:2px; }
-    .mapstyle-left .label{ color:var(--muted); font-size:12px; margin-bottom:4px; }
-
-    /* Bigger white close button that sits just outside the popup corner */
-    .maplibregl-popup-close-button{
-      position:absolute; top:-8px; right:-8px; color:#fff !important; font-size:22px;
-      width:28px; height:28px; line-height:28px; background:rgba(0,0,0,.55); border-radius:50%;
-      border:none; box-shadow:0 2px 6px rgba(0,0,0,.35); text-shadow:none; opacity:1; z-index:2;
-    }
-    .maplibregl-popup-close-button:hover{ filter:brightness(1.15); }
-    .leaflet-popup-close-button{
-      position:absolute; top:-8px; right:-8px; color:#fff !important; font-size:22px;
-      width:28px; height:28px; line-height:28px; background:rgba(0,0,0,.55); border-radius:50%;
-      border:none; box-shadow:0 2px 6px rgba(0,0,0,.35); text-shadow:none; opacity:1; z-index:2;
-    }
-    .leaflet-popup-close-button:hover{ filter:brightness(1.15); }
-
-    /* ---- Floating Sonar Button ---- */
-    .sonar-btn{
-      position:fixed;right:16px;bottom:16px;z-index:1500;width:64px;height:64px;border-radius:12px;background:#0e1420;
-      border:1px solid var(--border);box-shadow:0 8px 24px rgba(0,0,0,.35);background-image:url('metal-sonar.png');
-      background-size:cover;background-position:center;cursor:pointer;
-    }
-    .sonar-btn.disabled{opacity:.5;filter:grayscale(60%);cursor:pointer}
-
-    /* ---- Sonar Modal ---- */
-    .sonar-options{display:grid;gap:10px;margin-top:10px}
-    .seg{display:flex;gap:8px;flex-wrap:wrap}
-    .seg .chip{padding:6px 10px;border:1px solid var(--border);border-radius:999px;background:var(--chip);cursor:pointer;font-weight:700;color:#fff;}
-    .seg .chip.active{outline:2px solid var(--accent)}
-    .seg .chip.red{background:rgba(239,68,68,.18);border-color:#5b1e1e}
-    .seg .chip.green{background:rgba(34,197,94,.18);border-color:#1b3e2a}
-    .scan-area{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
-    .scan-wait{display:none;gap:8px;align-items:center;color:var(--muted);font-weight:700}
-    .scan-wait.visible{display:flex}
-    .pulse{width:10px;height:10px;border-radius:999px;background:var(--accent);box-shadow:0 0 0 0 rgba(96,165,250,.7);animation:pulse 1s infinite;}
-    @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(96,165,250,.7)}70%{box-shadow:0 0 0 18px rgba(96,165,250,0)}100%{box-shadow:0 0 0 0 rgba(96,165,250,0)}}
-
-    /* ===== Controls: ONLY native geolocate; remove custom controls ===== */
-    .maplibregl-ctrl-top-right{display:flex;flex-direction:column;gap:6px;}
-
-    /* Audio toggle icon btn */
-    .icon-btn{display:inline-grid;place-items:center;width:30px;height:30px;border:1px solid var(--border);border-radius:8px;background:var(--panel-2);cursor:pointer}
-    .icon-btn svg{width:18px;height:18px}
+:root{
+  --panel:#0f1115;--panel-2:#12151b;--muted:#98a2b3;--text:#e5e7eb;
+  --accent:#60a5fa;--border:#1f2430;--bg:#0b0d11;--chip:#1c212e;--side:300px;
+  --red:#ef4444;--green:#22c55e;--blue:#3b82f6;
+}
+/* Scrollbars */
+*::-webkit-scrollbar{width:6px;height:6px}
+*::-webkit-scrollbar-track{background:var(--bg)}
+*::-webkit-scrollbar-thumb{background:var(--border);border-radius:8px;border:2px solid transparent;background-clip:padding-box}
+*::-webkit-scrollbar-thumb:hover{background:#2a3243}
+.sidebar::-webkit-scrollbar{width:6px}
+.sidebar:hover::-webkit-scrollbar{width:10px}
+html,body,.sidebar,.grp-list,#layers{scrollbar-width:thin;scrollbar-color:var(--border) var(--bg)}
+/* Base layout */
+html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+.app{position:relative;display:grid;grid-template-columns:var(--side) 1fr;height:100vh;transition:grid-template-columns .28s ease}
+.ui-reopen{position:absolute;left:10px;top:10px;z-index:1100;display:none;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:6px 10px;font-weight:700;cursor:pointer;box-shadow:0 2px 14px rgba(0,0,0,.35);color:var(--text)}
+.app.ui-collapsed .ui-reopen{display:inline-block}
+.sidebar{position:relative;background:var(--panel);border-right:1px solid var(--border);overflow:auto;width:var(--side);transition:width .28s ease;isolation:isolate}
+/* Purple “dark veil” overlay */
+.darkveil-canvas{position:absolute;inset:0;z-index:5;pointer-events:none;opacity:.35;mix-blend-mode:overlay;filter:saturate(1.05) contrast(1.06) brightness(.98)}
+.header{position:relative;z-index:1;padding:12px;border-bottom:1px solid var(--border);display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center}
+.project-title{font-weight:800;font-size:16px;display:flex;gap:8px;align-items:center}
+.toolbar{position:relative;z-index:1;display:flex;gap:8px;flex-wrap:wrap}
+.header .toolbar{margin-top:0}
+.btn{background:var(--chip);border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-weight:600;cursor:pointer;color:var(--text)}
+.btn.small{padding:4px 8px;font-size:12px}
+.btn.danger{background:rgba(239,68,68,.1);border-color:#7f1d1d;color:#fecaca}
+.hint{color:var(--muted);font-size:12px}
+.row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center}
+.row-split{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:center}
+input[type="url"],select,input[type="text"],input[type="number"]{position:relative;z-index:1;width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:8px;padding:8px 10px;background:var(--panel-2);color:var(--text)}
+#mapgl,#mapleaf{height:100%;width:100%}
+/* Layers list */
+.layers-empty{padding:14px;position:relative;z-index:1}
+.layer{position:relative;z-index:1;border-bottom:1px solid var(--border);background:var(--panel-2)}
+.layer+.layer{margin-top:10px;border-radius:10px;overflow:hidden}
+.layer-head{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px;padding:10px 12px}
+.layer-head .title{font-weight:700}
+.layer-head .actions{display:flex;gap:6px;flex-wrap:wrap}
+.import-line{padding:8px 12px;background:#0e1420;border-top:1px solid var(--border)}
+.import-line .link{color:var(--accent);font-weight:600;cursor:pointer}
+/* Feature rows (compact) */
+.feature{display:grid;grid-template-columns:14px 1fr auto auto;gap:4px;align-items:center;padding:2px 8px;border-top:1px solid var(--border)}
+.feature .name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;font-size:11px;line-height:1.15}
+.group-bullet{width:14px;height:14px;border-radius:999px;display:grid;place-items:center;border:1px solid #2a3243;background:#11161f;color:#fff;font-size:9px;font-weight:800}
+/* Visibility eye button */
+.eye-btn{display:inline-grid;place-items:center;width:30px;height:22px;border:1px solid var(--border);border-radius:8px;background:var(--panel-2);cursor:pointer}
+.eye-btn svg{width:14px;height:14px;stroke:#e5e7eb;fill:none;stroke-width:2}
+.eye-btn.off{opacity:.6}
+/* Toggles + chips */
+.toggle{display:inline-grid;place-items:center;width:16px;height:16px;border:1px solid #2a3243;border-radius:4px;background:#0f141d;cursor:pointer}
+.toggle.checked{background:#16a34a;border-color:#16a34a}
+details.grp{position:relative;z-index:1;margin:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--panel-2)}
+details.grp>summary{list-style:none;padding:10px 12px;cursor:pointer;font-weight:700}
+details.grp>summary::-webkit-details-marker{display:none}
+.grp-list{padding:8px 12px;display:grid;gap:6px;max-height:220px;overflow:auto}
+.yt-portrait{width:260px;aspect-ratio:9/16;background:#000;border-radius:12px;overflow:hidden;margin:8px auto}
+.yt-portrait>iframe{width:100%;height:100%;border:0}
+.ui-hide,#edit-toggle{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:6px 10px;font-weight:700;box-shadow:0 2px 14px rgba(0,0,0,.35);color:var(--text)}
+#edit-toggle.off{opacity:.6}
+a{color:var(--accent)}
+/* Popups */
+.maplibregl-popup-content,.leaflet-popup-content-wrapper{background:#0f1115;color:#e5e7eb;border:1px solid #1f2430;border-radius:12px}
+.maplibregl-popup-tip,.leaflet-popup-tip{background:#0f1115}
+.maplibregl-popup-close-button,.leaflet-popup-close-button{
+  position:absolute;top:-8px;right:-8px;color:#fff!important;font-size:22px;width:28px;height:28px;line-height:28px;
+  background:rgba(0,0,0,.55);border-radius:50%;border:none;box-shadow:0 2px 6px rgba(0,0,0,.35);text-shadow:none;opacity:1;z-index:2
+}
+.maplibregl-popup-close-button:hover,.leaflet-popup-close-button:hover{filter:brightness(1.15)}
+/* Style editor modal */
+.style-editor{position:fixed;z-index:1200;display:none;min-width:240px;max-width:280px;background:#0f1115;color:#e5e7eb;border:1px solid #1f2430;border-radius:12px;padding:12px;box-shadow:0 12px 32px rgba(0,0,0,.45)}
+.style-editor h4{margin:0 0 8px 0;font-size:14px}
+.style-row{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:center;margin:8px 0}
+.style-row input[type="color"],.style-row input[type="number"],.style-row input[type="range"]{width:100%;background:#12151b;border:1px solid #1f2430;color:#e5e7eb;border-radius:8px;padding:6px 8px}
+.style-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:6px}
+.style-actions .btn{padding:6px 10px}
+/* Map style row */
+.mapstyle-row{position:relative;z-index:1;padding:12px;border-bottom:1px solid var(--border);display:grid;grid-template-columns:1fr auto;gap:14px;align-items:start}
+.mapstyle-right{color:var(--muted);font-size:12px;text-align:right;line-height:1.35;max-width:240px;padding-top:2px}
+.mapstyle-left .label{color:var(--muted);font-size:12px;margin-bottom:4px}
+/* Server/Sonar modals */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;place-items:center;z-index:2000}
+.modal.visible{display:grid}
+.modal-card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:16px;max-width:380px;width:92%;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+.modal-card h3{margin:0 0 8px 0;font-size:16px}
+.modal-row{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:8px}
+.modal small{color:var(--muted)}
+.modal .err{color:#f87171;font-weight:700;margin-top:6px;display:none}
+.app.blocked-by-modal{pointer-events:none}
+.modal,.modal *{pointer-events:auto}
+/* Draw panel */
+.draw-grid{display:grid;grid-template-columns:1fr auto;gap:8px}
+.draw-grid #draw-coord{grid-column:1/-1}
+/* Sonar */
+.sonar-btn{position:fixed;right:16px;bottom:16px;z-index:1500;width:64px;height:64px;border-radius:12px;background:#0e1420;border:1px solid var(--border);box-shadow:0 8px 24px rgba(0,0,0,.35);background-image:url('metal-sonar.png');background-size:cover;background-position:center;cursor:pointer}
+.sonar-btn.disabled{opacity:.5;filter:grayscale(60%)}
+.sonar-options{display:grid;gap:10px;margin-top:10px}
+.seg{display:flex;gap:8px;flex-wrap:wrap}
+.seg .chip{padding:6px 10px;border:1px solid var(--border);border-radius:999px;background:var(--chip);cursor:pointer;font-weight:700;color:#fff}
+.seg .chip.active{outline:2px solid var(--accent)}
+.seg .chip.red{background:rgba(239,68,68,.18);border-color:#5b1e1e}
+.seg .chip.green{background:rgba(34,197,94,.18);border-color:#1b3e2a}
+.scan-area{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
+.scan-wait{display:none;gap:8px;align-items:center;color:var(--muted);font-weight:700}
+.scan-wait.visible{display:flex}
+.pulse{width:10px;height:10px;border-radius:999px;background:var(--accent);box-shadow:0 0 0 0 rgba(96,165,250,.7);animation:pulse 1s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(96,165,250,.7)}70%{box-shadow:0 0 0 18px rgba(96,165,250,0)}100%{box-shadow:0 0 0 0 rgba(96,165,250,0)}}
+/* Map controls */
+.maplibregl-ctrl-top-right{display:flex;flex-direction:column;gap:6px}
+.icon-btn{display:inline-grid;place-items:center;width:30px;height:30px;border:1px solid var(--border);border-radius:8px;background:var(--panel-2);cursor:pointer}
+.icon-btn svg{width:18px;height:18px}
+/* Hide duplicate geolocate controls */
+.maplibregl-ctrl-top-right .maplibregl-ctrl-group:has(.maplibregl-ctrl-geolocate) ~ .maplibregl-ctrl-group:has(.maplibregl-ctrl-geolocate){display:none!important}
   </style>
 </head>
 <body>
@@ -381,20 +294,62 @@ maptilersdk.config.apiKey = 'f9B8Wv0ythtbvpcK0QEw';
 const CUSTOM_STYLE = 'https://api.maptiler.com/maps/01994e5b-af91-7fae-b8bd-a68c497abf96/style.json?key=' + maptilersdk.config.apiKey;
 
 const mapgl = new maptilersdk.Map({ container:'mapgl', style:CUSTOM_STYLE, center:[103.8198,1.3521], zoom:12 });
-function glReady(fn){ if (mapgl.isStyleLoaded && mapgl.isStyleLoaded()) fn(); else mapgl.once('load', fn); }
+// Run all queued callbacks once the style loads (prevents skipped layers)
+const _glReadyQueue = [];
+let _glReadyBound = false;
+
+function glReady(fn) {
+  // Check multiple conditions for readiness
+  if (mapgl.isStyleLoaded && mapgl.isStyleLoaded() && mapgl.loaded && mapgl.loaded()) {
+    fn();
+    return;
+  }
+  
+  _glReadyQueue.push(fn);
+  
+  if (!_glReadyBound) {
+    _glReadyBound = true;
+    
+    // Listen to multiple events to catch all loading scenarios
+    const executeQueue = () => {
+      if (_glReadyQueue.length === 0) return;
+      const q = _glReadyQueue.splice(0, _glReadyQueue.length);
+      q.forEach(f => {
+        try { 
+          f(); 
+        } catch(e) { 
+          console.warn('glReady callback error:', e); 
+        }
+      });
+    };
+    
+    mapgl.on('load', executeQueue);
+    mapgl.on('styledata', executeQueue);
+    mapgl.on('idle', executeQueue);
+    
+    // Fallback timeout
+    setTimeout(() => {
+      if (_glReadyQueue.length > 0) {
+        console.warn('glReady timeout, force-executing queue');
+        executeQueue();
+      }
+    }, 2000);
+  }
+}
+
 
 // Allow smoother fractional zoom (optional but feels nicer)
 const mapleaf = L.map('mapleaf', {
   zoomControl: true,
   attributionControl: true,
-  zoomSnap: 0.25,
-  zoomDelta: 0.25
+  zoomSnap: 0.50,
+  zoomDelta: 0.50
 }).setView([1.3521,103.8198], 12);
 
 // Default OSM tiles, but with Retina + higher logical max zoom
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxNativeZoom: 19,  // native limit of OSM server
-  maxZoom: 22,        // let Leaflet scale beyond native
+  maxZoom: 21,        // let Leaflet scale beyond native
   detectRetina: true, // request higher-detail tiles for Hi-DPI
   attribution: '&copy; OpenStreetMap contributors'
 }).addTo(mapleaf);
@@ -422,12 +377,9 @@ function readdAllGroupsAfterGLStyleChange() {
     (async () => {
       await ensureAllIconsOnCurrentStyle();
       layerList.forEach(e => {
-        createGroupOnGL(e, true);
-        if (e.visible === false && e.glLayerIds) {
-          e.glLayerIds.forEach(lid => {
-            if (mapgl.getLayer(lid)) mapgl.setLayoutProperty(lid, 'visibility', 'none');
-          });
-        }
+        createGroupOnGL(e, true);     // rebuild GL layers on new style
+        refreshGroupGL(e);            // ensure data is bound
+        applyVisibility(e);           // enforce visibility
       });
       renderLayers();
       renderGroupsVisibility();
@@ -455,6 +407,16 @@ let layerSeq=1, featureSeq=1;
 const layerList=[]; // {id,name,visible,data,items,glSourceId,glLayerIds[],lfGroup,lfLayers:Map,_deletedLayer?}
 const byId=id=>document.getElementById(id);
 
+function ensureUniqueLayerId(entry){
+  // If another layer already has this id, bump it until unique
+  while (layerList.some(l => l !== entry && String(l.id) === String(entry.id))) {
+    entry.id = layerSeq++;
+  }
+  // Keep the global counter strictly ahead
+  layerSeq = Math.max(layerSeq, (Number(entry.id) || 0) + 1);
+}
+
+
 function kmlColorToCss(aabbggrr){ if(!aabbggrr){return{hex:'#ffffff',opacity:0.2};} let s=aabbggrr.trim(); if(s.length===6) s='ff'+s; return {hex:'#'+s.slice(6,8)+s.slice(4,6)+s.slice(2,4), opacity:parseInt(s.slice(0,2),16)/255}; }
 function defaultLabelFrom(n){ if(!n) return '•'; const c=(n.trim()[0]||'•').toUpperCase(); return /[A-Z0-9$]/.test(c)?c:'•'; }
 function escapeHtml(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
@@ -474,6 +436,24 @@ function buildPopupHTMLFromProps(props){
 }
 function bboxOfFeature(f){ let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity; (function scan(c){ if(typeof c[0]==='number'){ const [x,y]=c; minX=Math.min(minX,x); minY=Math.min(minY,y); maxX=Math.max(maxX,x); maxY=Math.max(maxY,y);} else c.forEach(scan); })(f.geometry.coordinates); return [[minX,minY],[maxX,maxY]]; }
 function panPopupIntoViewGL(lngLat,liftPx=220){ const p=mapgl.project(lngLat); p.y-=liftPx; const center=mapgl.unproject(p); mapgl.easeTo({center,duration:350}); }
+
+/* ---- VISIBILITY: single source of truth for GL + Leaflet ---- */
+function applyVisibility(entry){
+  // MapLibre GL
+  (entry.glLayerIds || []).forEach(lid=>{
+    if (mapgl.getLayer(lid)){
+      mapgl.setLayoutProperty(lid, 'visibility', (entry.visible !== false) ? 'visible' : 'none');
+    }
+  });
+  // Leaflet
+  if (entry.lfGroup){
+    if (entry.visible !== false){
+      if (!mapleaf.hasLayer(entry.lfGroup)) entry.lfGroup.addTo(mapleaf);
+    } else {
+      if (mapleaf.hasLayer(entry.lfGroup)) mapleaf.removeLayer(entry.lfGroup);
+    }
+  }
+}
 
 /* Timestamps (match Sonar & Draw exactly) */
 function timestampLabel(){ return new Date().toLocaleString(); }
@@ -524,8 +504,35 @@ function extractKmlMeta(xmlDoc,opts){ function t(n,sel){ const el=n.querySelecto
 /* ================= MapLibre overlay ================= */
 function createGroupOnGL(entry, clearIfExists){
   glReady(async ()=>{
-    await ensureAllIconsOnCurrentStyle();
+    // Ensure the style is actually loaded
+    if (!mapgl.isStyleLoaded() || !mapgl.loaded()) {
+      console.warn('Style not ready, requeueing layer creation for', entry.name);
+      setTimeout(() => createGroupOnGL(entry, clearIfExists), 100);
+      return;
+    }
 
+function verifyLayerOnGL(entry) {
+  const srcId = entry.glSourceId;
+  const layerIds = entry.glLayerIds || [];
+  
+  if (!srcId || !mapgl.getSource(srcId)) {
+    console.warn('Ghost layer detected:', entry.name, 'missing source');
+    return false;
+  }
+  
+  for (const lid of layerIds) {
+    if (!mapgl.getLayer(lid)) {
+      console.warn('Ghost layer detected:', entry.name, 'missing layer', lid);
+      return false;
+    }
+  }
+  
+  return true;
+}
+
+
+    await ensureAllIconsOnCurrentStyle();
+    // ... rest of existing function
     const srcId='src-'+entry.id, fillId='fill-'+entry.id, lineId='line-'+entry.id, iconId='icon-'+entry.id, lblId='lbl-'+entry.id, polyEdgeId='polyedge-'+entry.id;
     entry.glSourceId=srcId; entry.glLayerIds=[fillId,lineId,polyEdgeId,iconId,lblId];
 
@@ -571,6 +578,10 @@ function createGroupOnGL(entry, clearIfExists){
 
     attachLongPressGL(fillId, entry);
     attachLongPressGL(polyEdgeId, entry);
+
+    // Ensure fresh data binds and visibility is respected (prevents ghost layers)
+    refreshGroupGL(entry);
+    applyVisibility(entry);
   });
 }
 function refreshGroupGL(entry){ const src=mapgl.getSource(entry.glSourceId); if(src) src.setData(filteredFeatureCollection(entry)); }
@@ -604,6 +615,9 @@ function createGroupOnLeaflet(entry,rebuild=false){
     }
     entry.lfLayers.set(fid, list);
   });
+
+  // Respect current visibility on Leaflet too
+  applyVisibility(entry);
 }
 function refreshGroupBoth(entry){
   refreshGroupGL(entry);
@@ -644,13 +658,22 @@ function renderGroupsVisibility(){
     row.append(cb,name,count); host.appendChild(row);
   }
 }
+
 function renderLayers(){
   const host=byId('layers'); host.innerHTML='';
-  // INCLUDE layers with live features even if _deletedLayer was set; also auto-heal
   const visibleLayers = layerList.filter(l => !l._deletedLayer || hasLiveFeatures(l));
   if(!visibleLayers.length){ host.innerHTML='<div class="layers-empty"><div class="hint">No layers yet. Upload or drop a KML/KMZ.</div></div>'; return; }
+  
+  // Heal ghost layers
+  for(const entry of visibleLayers){
+    if(!entry._deletedLayer && hasLiveFeatures(entry) && (!entry.glSourceId || !mapgl.getSource(entry.glSourceId))){
+      glReady(() => { createGroupOnGL(entry, true); refreshGroupGL(entry); applyVisibility(entry); });
+    }
+  }
+  
   let healed=false; for(const L of visibleLayers){ healed = normalizeDeletedFlag(L) || healed; }
   if(healed) saveState();
+
 
   for(const entry of visibleLayers){
     const visibleOnMap=entry.visible!==false;
@@ -678,6 +701,11 @@ function renderLayers(){
       if(entry.glSourceId && mapgl.getSource(entry.glSourceId)) try{mapgl.removeSource(entry.glSourceId);}catch{}; 
       if(entry.lfGroup) try{entry.lfGroup.remove();}catch{};
       renderGroupsVisibility(); renderLayers(); saveState();
+
+      // Re-assert visibility for the survivors (prevents GL defaults from flipping others)
+      for (const other of layerList){
+        if (other !== entry && !other._deletedLayer) applyVisibility(other);
+      }
     };
     actions.append(renameBtn, delBtn);
 
@@ -696,11 +724,11 @@ function renderLayers(){
         const moveBtn=document.createElement('button'); moveBtn.className='btn small'; moveBtn.textContent='Move';
         moveBtn.onclick=()=>{ const target=prompt('Move to group (existing or new):', entry.name); if(!target) return; moveFeatureToGroup(entry, it.fid, target); };
 
-        // Eye visibility toggle (replaces green box)
+        // Eye visibility toggle
         const eyeBtn = document.createElement('button');
         eyeBtn.type = 'button';
         eyeBtn.className = 'eye-btn';
-        setEyeBtn(eyeBtn, it.visible !== false);   // uses helper added earlier
+        setEyeBtn(eyeBtn, it.visible !== false);
 
         eyeBtn.addEventListener('click', ()=>{
           it.visible = !(it.visible !== false);
@@ -736,14 +764,28 @@ function zoomToFeature(entry, fid){
 function getOrCreateLayerByName(name){
   let entry = layerList.find(l => l.name === name && !l._deletedLayer);
   if(!entry){
-    entry = { id:layerSeq++, name, visible:true, data:{type:'FeatureCollection',features:[]}, items:[], glSourceId:null, glLayerIds:[], lfGroup:null, lfLayers:null };
+    entry = {
+      id: layerSeq++,
+      name,
+      visible: true,
+      data: {type:'FeatureCollection',features:[]},
+      items: [],
+      glSourceId: null,
+      glLayerIds: [],
+      lfGroup: null,
+      lfLayers: null
+    };
+    ensureUniqueLayerId(entry);
     layerList.push(entry);
-    if(mapgl.isStyleLoaded && mapgl.isStyleLoaded()) createGroupOnGL(entry); else mapgl.once('load',()=>createGroupOnGL(entry));
-    createGroupOnLeaflet(entry);
+
+    glReady(() => createGroupOnGL(entry, /* clearIfExists */ true));
+    createGroupOnLeaflet(entry, /* rebuild */ true);
+
     renderGroupsVisibility(); renderLayers(); saveState();
   }
   return entry;
 }
+
 function rebuildItemsFromFeatures(features){
   return (features||[])
     .filter(f=>!f.properties?._deleted)
@@ -778,6 +820,8 @@ function moveFeatureToGroup(fromEntry, fid, targetName){
   });
   fromEntry.items = rebuildItemsFromFeatures(fromEntry.data.features);
   refreshGroupBoth(fromEntry);
+  applyVisibility(fromEntry);
+  saveState();
 
   // 3) Add the live feature to the target layer (preserve _gid)
   const toEntry = getOrCreateLayerByName(targetName);
@@ -795,7 +839,7 @@ function moveFeatureToGroup(fromEntry, fid, targetName){
   toEntry.data.features.push(moved);
   toEntry.items = rebuildItemsFromFeatures(toEntry.data.features);
   refreshGroupBoth(toEntry);
-
+  applyVisibility(toEntry);
   renderGroupsVisibility();
   renderLayers();
   saveState();
@@ -836,14 +880,28 @@ function addKmlText(text,filename,opts,forceGroupName){
       features.push(enriched); items.push({fid,name:itemName,label,visible:true});
     }
 
-    const entry={ id:layerSeq++, name:gname, visible:true, data:{type:'FeatureCollection',features}, items, glSourceId:null, glLayerIds:[], lfGroup:null, lfLayers:null };
+    const entry = {
+      id: layerSeq++,
+      name: gname,
+      visible: true,
+      data: { type:'FeatureCollection', features },
+      items,
+      glSourceId: null,
+      glLayerIds: [],
+      lfGroup: null,
+      lfLayers: null
+    };
+    ensureUniqueLayerId(entry);
     layerList.push(entry);
-    if(mapgl.isStyleLoaded && mapgl.isStyleLoaded()) createGroupOnGL(entry); else mapgl.once('load',()=>createGroupOnGL(entry));
-    createGroupOnLeaflet(entry);
-  }
 
-  renderLayers(); renderGroupsVisibility(); saveState();
-}
+    glReady(() => createGroupOnGL(entry, /* clearIfExists */ true));
+    createGroupOnLeaflet(entry, /* rebuild */ true);
+
+    renderLayers();
+    renderGroupsVisibility();
+    saveState();
+    } // <-- close: for (const gname of Object.keys(grouped)) {
+  }
 
 /* ========= Upload/URL ========= */
 byId('upload-btn').onclick=()=>byId('upload-input').click();
@@ -857,8 +915,33 @@ byId('upload-input').addEventListener('change', ev=>{
 });
 byId('url-load').onclick=()=>{ const url=byId('url-input').value.trim(); if(!url) return; (/\.kmz(\?|#|$)/i.test(url) ? loadKMZFromUrl(url) : loadKMLFromUrl(url)).catch(e=>{ console.error(e); alert('Failed to load from URL (CORS or bad link).'); }); };
 
-/* Add empty layer */
-byId('add-layer').onclick=function(){ const entry={ id:layerSeq++, name:'Untitled layer', visible:true, data:{type:'FeatureCollection',features:[]}, items:[], glSourceId:null, glLayerIds:[], lfGroup:null, lfLayers:null }; layerList.push(entry); createGroupOnGL(entry); createGroupOnLeaflet(entry); renderLayers(); renderGroupsVisibility(); saveState(); };
+// Add empty layer
+byId('add-layer').onclick = function () {
+  const entry = {
+    id: layerSeq++,
+    name: 'Untitled layer',
+    visible: true,
+    data: { type: 'FeatureCollection', features: [] },
+    items: [],
+    glSourceId: null,
+    glLayerIds: [],
+    lfGroup: null,
+    lfLayers: null
+  };
+
+  ensureUniqueLayerId(entry);
+  layerList.push(entry);
+
+  // Use the unified loader guard
+  glReady(() => createGroupOnGL(entry, /* clearIfExists */ true));
+  createGroupOnLeaflet(entry, /* rebuild */ true);
+
+  renderLayers();
+  renderGroupsVisibility();
+  saveState();
+};
+
+
 
 /* ======= Circles helper (separate from Sonar) ======= */
 function addCircleToLayer(centerLngLat, radius, color, layerName){
@@ -870,7 +953,9 @@ function addCircleToLayer(centerLngLat, radius, color, layerName){
   const props = { fid, name, hidden:false, _gid:fid, _ts:Date.now(), _fill:hex, _fillOpacity:0.18, _stroke:hex, _strokeOpacity:0.9, _weight:2 };
   entry.data.features.push({ type:'Feature', geometry:geom, properties:props });
   entry.items = rebuildItemsFromFeatures(entry.data.features);
-  refreshGroupBoth(entry); renderLayers(); renderGroupsVisibility(); saveState();
+  refreshGroupBoth(entry);
+  applyVisibility(entry);
+  renderLayers(); renderGroupsVisibility(); saveState();
   const b=bboxOfFeature({geometry:geom});
   if(engine==='gl') mapgl.fitBounds(b,{padding:40,duration:500}); else mapleaf.fitBounds([[b[0][1],b[0][0]],[b[1][1],b[1][0]]],{padding:[40,40]});
 }
@@ -947,8 +1032,6 @@ document.addEventListener('keydown', (e)=>{
     try{ localStorage.setItem('sqkii-editing', editingEnabled ? '1' : '0'); }catch{}
   }
 });
-
-
 
 function openStyleEditor(entry,fid,screenX,screenY){
   if(!editingEnabled) return;
@@ -1084,20 +1167,47 @@ async function applyStateArray(arr){
       if (f?.properties?._gid  != null) f.properties._gid  = String(f.properties._gid);
     }
 
+    // Normalize restored feature props (prevents ghost polygons / hidden drift)
+    for (const f of (entry.data?.features || [])) {
+      const p = f.properties || (f.properties = {});
+      if (typeof p.hidden !== 'boolean') p.hidden = false;
+      const t = f.geometry?.type;
+      if (t === 'Polygon' || t === 'MultiPolygon') {
+        if (p._fill == null)          p._fill = '#ffffff';
+        if (p._fillOpacity == null)   p._fillOpacity = 0.15;
+        if (p._stroke == null)        p._stroke = '#ffffff';
+        if (p._strokeOpacity == null) p._strokeOpacity = 0.7;
+        if (p._weight == null)        p._weight = 2;
+      }
+    }
+
+    // ...build entry...
     await rebindFeatureIcons(entry);
     entry.items = rebuildItemsFromFeatures(entry.data?.features || []);
-
-    // Heal ghost-layer flag if live features exist
     normalizeDeletedFlag(entry);
 
+    // ensure no id collisions from old saves / other clients
+    ensureUniqueLayerId(entry);
     layerList.push(entry);
 
-    if (mapgl.isStyleLoaded && mapgl.isStyleLoaded()) {
-      createGroupOnGL(entry);
-    } else {
-      mapgl.once('load', () => createGroupOnGL(entry));
-    }
-    createGroupOnLeaflet(entry);
+
+    // IMPORTANT: force clean rebuilds to avoid ghost layers
+    // Replace this section in applyStateArray:
+    glReady(() => createGroupOnGL(entry, /* clearIfExists */ true));
+    createGroupOnLeaflet(entry, /* rebuild */ true);
+
+    // With this:
+    await new Promise(resolve => {
+      glReady(() => {
+        createGroupOnGL(entry, /* clearIfExists */ true);
+        resolve();
+      });
+    });
+    createGroupOnLeaflet(entry, /* rebuild */ true);
+
+    // Make restore deterministic: enforce visibility and refresh both engines
+    applyVisibility(entry);
+    refreshGroupBoth(entry);
 
     if (entry.visible === false){
       (entry.glLayerIds || []).forEach(lid => {
@@ -1502,7 +1612,9 @@ function addSonarCircle(centerLngLat, radius, color){
   const props = { fid, name, hidden:false, _gid:fid, _ts:Date.now(), _fill:hex, _fillOpacity:0.18, _stroke:hex, _strokeOpacity:0.9, _weight:2 };
   entry.data.features.push({ type:'Feature', geometry:geom, properties:props });
   entry.items = rebuildItemsFromFeatures(entry.data.features);
-  refreshGroupBoth(entry); renderLayers(); renderGroupsVisibility(); saveState();
+  refreshGroupBoth(entry);
+  applyVisibility(entry);
+  renderLayers(); renderGroupsVisibility(); saveState();
   const b=bboxOfFeature({geometry:geom});
   if(engine==='gl') mapgl.fitBounds(b,{padding:40,duration:500}); else mapleaf.fitBounds([[b[0][1],b[0][0]],[b[1][1],b[1][0]]],{padding:[40,40]});
 }
@@ -1554,37 +1666,7 @@ function downloadBlob(name, blob){ const url=URL.createObjectURL(blob); const a=
 byId('export-kml').onclick=()=>{ const kml=exportKMLString(); downloadBlob('sqkii-export.kml', new Blob([kml],{type:'application/vnd.google-earth.kml+xml'})); };
 byId('export-kmz').onclick=async()=>{ const zip=new JSZip(); const kml=exportKMLString(); zip.file('doc.kml', kml); const blob=await zip.generateAsync({type:'blob'}); downloadBlob('sqkii-export.kmz', blob); };
 
-<!-- ===== Dark Veil — pure WebGL (brighter & obvious purple) ===== -->
-
-(function(){
-  const c=document.getElementById('darkveil');if(!c)return;c.style.opacity=".5"; // make the overlay stronger
-  const gl=c.getContext('webgl',{alpha:true,premultipliedAlpha:false})||c.getContext('experimental-webgl');if(!gl){console.warn('DarkVeil fallback');return;}
-  const VS=`attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}`;
-  const FS=`precision mediump float;uniform vec2 r;uniform float t,h,n,s,f,w;
-  float rnd(vec2 p){return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453);}
-  mat3 r2y=mat3(0.299,0.587,0.114,0.596,-0.274,-0.322,0.211,-0.523,0.312),y2r=mat3(1.,0.956,0.621,1.,-0.272,-0.647,1.,-1.106,1.703);
-  vec3 hue(vec3 c,float d){vec3 y=r2y*c;float a=radians(d),C=cos(a),S=sin(a);return clamp(y2r*vec3(y.x,y.y*C-y.z+S,y.y*S+y.z*C),0.,1.);}
-  vec3 pat(vec2 u){float d=length(u),a=atan(u.y,u.x);float m=.55+.45*sin(4.0*d-1.4*t)+.35*cos(12.0*a+.8*t);float r=.15*sin(22.*u.x+.9*t)*cos(22.*u.y-.6*t);return vec3(m+r,m*.35,m*1.2);}
-  vec3 sat(vec3 c,float k){float l=dot(c,vec3(.2126,.7152,.0722));return mix(vec3(l),c,k);}
-  void main(){vec2 u=(gl_FragCoord.xy/r)*2.-1.;u.y*=-1.;u+=w*vec2(sin(u.y*6.283+.5*t),cos(u.x*6.283+.5*t))*.07;
-    vec3 col=pat(u);col=hue(col,h);col=sat(col,1.7);                           // extra saturation
-    col=mix(col,vec3(.80,.45,1.00),.70);                                       // strong purple tint
-    col=vec3(col.r*1.45,col.g*.55,col.b*1.65);                                 // push R/B, suppress G
-    col*=1.35; col=pow(col,vec3(.85));                                         // exposure + gamma brighten
-    float sl=sin(gl_FragCoord.y*f)*.5+.5; col*=1.-(sl*sl)*s;                   // scanlines
-    col+=(rnd(gl_FragCoord.xy+t)-.5)*n*.8; gl_FragColor=vec4(clamp(col,0.,1.),1.);
-  }`;
-  function S(t,s){const x=gl.createShader(t);gl.shaderSource(x,s);gl.compileShader(x);return x;}
-  const pr=gl.createProgram();gl.attachShader(pr,S(gl.VERTEX_SHADER,VS));gl.attachShader(pr,S(gl.FRAGMENT_SHADER,FS));gl.linkProgram(pr);gl.useProgram(pr);
-  const b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
-  const a=gl.getAttribLocation(pr,'p');gl.enableVertexAttribArray(a);gl.vertexAttribPointer(a,2,gl.FLOAT,false,0,0);
-  const uR=gl.getUniformLocation(pr,'r'),uT=gl.getUniformLocation(pr,'t');gl.uniform1f(gl.getUniformLocation(pr,'h'),300.0);
-  gl.uniform1f(gl.getUniformLocation(pr,'n'),0.02);gl.uniform1f(gl.getUniformLocation(pr,'s'),0.06);gl.uniform1f(gl.getUniformLocation(pr,'f'),0.08);gl.uniform1f(gl.getUniformLocation(pr,'w'),0.08);
-  const rs=()=>{const w=c.parentElement.clientWidth|0,h=c.parentElement.clientHeight|0;if(c.width!==w||c.height!==h){c.width=w;c.height=h;gl.viewport(0,0,w,h);}gl.uniform2f(uR,c.width,c.height)};addEventListener('resize',rs,{passive:true});rs();
-  let st=performance.now(),raf;!function loop(){gl.uniform1f(uT,(performance.now()-st)/1e3);gl.drawArrays(gl.TRIANGLES,0,3);raf=requestAnimationFrame(loop)}();document.addEventListener('visibilitychange',()=>{if(document.hidden)cancelAnimationFrame(raf);else{st=performance.now();!function loop(){gl.uniform1f(uT,(performance.now()-st)/1e3);gl.drawArrays(gl.TRIANGLES,0,3);raf=requestAnimationFrame(loop)}();}});
-})();
-
-
+/* ===== Dark Veil — pure WebGL (brighter & obvious purple) ===== */
 /* ===== EDITABLE KNOBS (Ultra-Blended) ===== */
 const SPEED=0.2,ANGLE_SPEED=0.12,BRIGHTNESS=1.06,RES_SCALE=1.0;
 const BASE_PURPLE=[0.50,0.32,0.96],ACC_LIGHT=[0.98,0.78,1.00],ACC_DARK=[0.36,0.08,0.60];
