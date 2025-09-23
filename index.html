@@ -36,6 +36,9 @@
   --accent:#60a5fa;--border:#1f2430;--bg:#0b0d11;--chip:#1c212e;--side:300px;
   --red:#ef4444;--green:#22c55e;--blue:#3b82f6;
 }
+
+.q-body--prevent-scroll{overflow:hidden!important;position:fixed!important;width:100%!important;height:100%!important;touch-action:none!important}
+
 /* Scrollbars */
 *::-webkit-scrollbar{width:6px;height:6px}
 *::-webkit-scrollbar-track{background:var(--bg)}
@@ -145,7 +148,7 @@ a{color:var(--accent)}
 .icon-btn svg{width:18px;height:18px}
 /* Hide duplicate geolocate controls */
 .maplibregl-ctrl-top-right .maplibregl-ctrl-group:has(.maplibregl-ctrl-geolocate) ~ .maplibregl-ctrl-group:has(.maplibregl-ctrl-geolocate){display:none!important}
-  </style>
+  </style
 </head>
 <body>
 <div class="app" id="app">
@@ -174,12 +177,11 @@ a{color:var(--accent)}
       <div class="mapstyle-left">
         <div class="label">Map style</div>
         <select id="basemap">
-          <option value="custom" selected>Sqkii Purple Map (custom)</option>
+          <option value="custom" selected>Sqkii Purple Map</option>
+          <option value="osm">OpenStreetMap </option>
           <option value="streets">MapTiler Streets</option>
-          <option value="dark">MapTiler Dark</option>
           <option value="outdoor">MapTiler Outdoor</option>
           <option value="satellite">MapTiler Satellite</option>
-          <option value="osm">OpenStreetMap (raster)</option>
         </select>
       </div>
       <div class="mapstyle-right">
@@ -345,18 +347,20 @@ function glReady(fn) {
 const mapleaf = L.map('mapleaf', {
   zoomControl: true,
   attributionControl: true,
-  zoomSnap: 0.50,
-  zoomDelta: 0.50
+  zoomSnap: 0.25,
+  zoomDelta: 0.25,
 }).setView([1.3521,103.8198], 12);
 
 // Default OSM tiles, but with Retina + higher logical max zoom
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxNativeZoom: 19,  // native limit of OSM server
-  maxZoom: 19,      // let Leaflet scale beyond native
+  maxNativeZoom: 17, //native limit of OSM server
+  maxZoom: 21,    // let Leaflet scale beyond native
   detectRetina: true, // request higher-detail tiles for Hi-DPI
   attribution: '&copy; OpenStreetMap contributors'
 }).addTo(mapleaf);
 
+mapgl.on('load', () => mapgl.on('click', (e) => { if (!e.originalEvent.defaultPrevented) closeActivePopup(); }));
+mapleaf.on('click', (e) => { if (!e.originalEvent.defaultPrevented) closeActivePopup(); });
 
 let engine='gl';
 function showGL(){ const c=mapleaf.getCenter(), z=mapleaf.getZoom(); document.getElementById('mapleaf').style.display='none'; document.getElementById('mapgl').style.display='block'; mapgl.resize(); mapgl.jumpTo({center:[c.lng,c.lat], zoom:z}); engine='gl'; }
@@ -439,6 +443,86 @@ function buildPopupHTMLFromProps(props){
 }
 function bboxOfFeature(f){ let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity; (function scan(c){ if(typeof c[0]==='number'){ const [x,y]=c; minX=Math.min(minX,x); minY=Math.min(minY,y); maxX=Math.max(maxX,x); maxY=Math.max(maxY,y);} else c.forEach(scan); })(f.geometry.coordinates); return [[minX,minY],[maxX,maxY]]; }
 function panPopupIntoViewGL(lngLat,liftPx=220){ const p=mapgl.project(lngLat); p.y-=liftPx; const center=mapgl.unproject(p); mapgl.easeTo({center,duration:350}); }
+
+
+/* ================= POPUP MANAGEMENT SYSTEM ================= */
+let activePopup = null;
+let scrollLockEnabled = false;
+
+function enableScrollLock() {
+  if (scrollLockEnabled) return;
+  scrollLockEnabled = true;
+  
+  document.body.classList.add('q-body--prevent-scroll');
+  
+  // iOS viewport handling
+  if (window.visualViewport) {
+    const viewport = window.visualViewport;
+    const onViewportChange = () => {
+      document.body.style.height = `${viewport.height}px`;
+    };
+    viewport.addEventListener('resize', onViewportChange);
+    viewport.addEventListener('scroll', onViewportChange);
+    onViewportChange();
+  }
+  
+  // Block wheel/scroll events
+  const blockScroll = (e) => e.preventDefault();
+  document.addEventListener('wheel', blockScroll, { passive: false });
+  document.addEventListener('touchmove', blockScroll, { passive: false });
+}
+
+function disableScrollLock() {
+  if (!scrollLockEnabled) return;
+  scrollLockEnabled = false;
+  
+  document.body.classList.remove('q-body--prevent-scroll');
+  document.body.style.height = '';
+  
+  // Remove event listeners
+  const blockScroll = (e) => e.preventDefault();
+  document.removeEventListener('wheel', blockScroll);
+  document.removeEventListener('touchmove', blockScroll);
+}
+
+function closeActivePopup() {
+  if (activePopup) {
+    try {
+      if (activePopup.remove) activePopup.remove();
+      else if (activePopup.closePopup) activePopup.closePopup();
+    } catch(e) {}
+    activePopup = null;
+    disableScrollLock();
+  }
+}
+
+function showSinglePopup(popup, lngLat, content) {
+  closeActivePopup(); // Close any existing popup first
+  
+  if (engine === 'gl') {
+    activePopup = new maptilersdk.Popup({ 
+      anchor:'bottom', 
+      offset:[0,18], 
+      maxWidth:'340px', 
+      closeOnClick:true 
+    })
+    .setLngLat(lngLat)
+    .setHTML(content)
+    .addTo(mapgl);
+    
+    panPopupIntoViewGL(lngLat, 220);
+  } else {
+    // For Leaflet
+    activePopup = popup;
+  }
+  
+  enableScrollLock();
+  
+  // Auto-close popup after 10 seconds to prevent accumulation
+  setTimeout(() => {
+    if (activePopup === popup) closeActivePopup();
+  }, 10000);
+}
 
 /* ---- VISIBILITY: single source of truth for GL + Leaflet ---- */
 function applyVisibility(entry){
@@ -573,9 +657,15 @@ function verifyLayerOnGL(entry) {
     const POP=18;
     [fillId,polyEdgeId,lineId,iconId,lblId].forEach(lid=>{
       mapgl.on('click', lid, (e)=>{
-        panPopupIntoViewGL(e.lngLat, 220);
-        new maptilersdk.Popup({ anchor:'bottom', offset:[0,POP], maxWidth:'340px', closeOnClick:true })
-          .setLngLat(e.lngLat).setHTML(buildPopupHTMLFromProps((e.features[0]&&e.features[0].properties)||{})).addTo(mapgl);
+        if (!e.features || !e.features.length) return;
+        const feature = e.features[0];
+        if (!feature || !feature.properties) return;
+    
+        const content = buildPopupHTMLFromProps(feature.properties);
+        showSinglePopup(null, e.lngLat, content);
+    
+        // Stop event propagation to prevent multiple popups
+        e.originalEvent.stopPropagation();
       });
     });
 
@@ -606,15 +696,29 @@ function createGroupOnLeaflet(entry,rebuild=false){
     if(f.geometry.type==='Point'){
       const [lng,lat]=f.geometry.coordinates;
       const icon=leafletIconFor(f.properties._iconUrl || nameToUrl.get(f.properties._icon),32);
-      const m=L.marker([lat,lng],{icon}).bindPopup(buildPopupHTMLFromProps(f.properties),{autoPan:true,offset:[0,-18]});
+      const m=L.marker([lat,lng],{icon});
+  
+      m.on('click', () => {
+        closeActivePopup();
+        activePopup = m.bindPopup(buildPopupHTMLFromProps(f.properties),{autoPan:true,offset:[0,-18]}).openPopup();
+        enableScrollLock();
+      });
+  
       if(!f.properties.hidden) m.addTo(entry.lfGroup); list.push(m);
     }else{
-      const gj=L.geoJSON(f,{ style: geom=> (geom.type.includes('Polygon')?polyStyle:lineStyle) })
-        .bindPopup(buildPopupHTMLFromProps(f.properties),{autoPan:true,offset:[0,-18]});
-      if(!f.properties.hidden) gj.addTo(entry.lfGroup);
-      list.push(gj);
+      const gj=L.geoJSON(f,{ style: geom=> (geom.type.includes('Polygon')?polyStyle:lineStyle) });
+  
+      gj.on('click', () => {
+        closeActivePopup();
+        activePopup = gj.bindPopup(buildPopupHTMLFromProps(f.properties),{autoPan:true,offset:[0,-18]}).openPopup();
+        enableScrollLock();
+      });
+
       gj.on('mousedown', (ev)=> attachLongPressLeaf(ev, entry, fid));
       gj.on('touchstart', (ev)=> attachLongPressLeaf(ev, entry, fid));
+  
+      if(!f.properties.hidden) gj.addTo(entry.lfGroup);
+      list.push(gj);
     }
     entry.lfLayers.set(fid, list);
   });
@@ -1006,6 +1110,31 @@ const editorEl=byId('style-editor');
 const seFill=byId('se-fill'), seFillOp=byId('se-fillop'), seOutline=byId('se-outline'), seStroke=byId('se-stroke'), seWidth=byId('se-width'), seClose=byId('se-close'), seDelete=byId('se-delete');
 let editCtx=null, editingEnabled=false;
 const editToggle = document.getElementById('edit-toggle');
+
+seDelete.addEventListener('click', ()=>{
+  if(!editCtx) return;
+  const {entry,fid}=editCtx;
+  
+  // Close popup if it's for the feature being deleted
+  closeActivePopup();
+  
+  const ix = entry.data.features.findIndex(x=>x.properties.fid===fid);
+  if(ix<0) return;
+  const p = entry.data.features[ix].properties || {};
+  if(!confirm('Delete this feature?')) return;
+
+  entry.data.features.splice(ix,1);
+  const key = p._gid || p.fid;
+  entry.data.features.push({
+    type:'Feature',
+    geometry:{type:'Point',coordinates:[0,0]},
+    properties:{ fid:key, _gid:key, _deleted:true, _ts:Date.now(), name:p.name||'Deleted feature' }
+  });
+  entry.items = rebuildItemsFromFeatures(entry.data.features);
+
+  refreshGroupBoth(entry); renderLayers(); renderGroupsVisibility(); saveState();
+  closeStyleEditor();
+});
 
 function reflectEditUI(){
   if (!editToggle) return;
