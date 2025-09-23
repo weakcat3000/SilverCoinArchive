@@ -68,8 +68,6 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font:14px/
 input[type="url"],select,input[type="text"],input[type="number"]{position:relative;z-index:1;width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:8px;padding:8px 10px;background:var(--panel-2);color:var(--text)}
 #mapgl,#mapleaf{height:100%;width:100%}
 /* Layers list */
-@supports (-webkit-touch-callout: none) { input[type="text"],input[type="url"],input[type="number"],input[type="search"],input[type="email"],input[type="tel"],textarea,select { font-size:16px !important; line-height:1.2; min-height:38px; } }
-
 .layers-empty{padding:14px;position:relative;z-index:1}
 .layer{position:relative;z-index:1;border-bottom:1px solid var(--border);background:var(--panel-2)}
 .layer+.layer{margin-top:10px;border-radius:10px;overflow:hidden}
@@ -150,7 +148,9 @@ a{color:var(--accent)}
 .icon-btn svg{width:18px;height:18px}
 /* Hide duplicate geolocate controls */
 .maplibregl-ctrl-top-right .maplibregl-ctrl-group:has(.maplibregl-ctrl-geolocate) ~ .maplibregl-ctrl-group:has(.maplibregl-ctrl-geolocate){display:none!important}
-  </style
+@supports (-webkit-touch-callout: none) { #server-code-input,#draw-coord,#draw-radius,#url-input,input,select,textarea{font-size:16px!important;line-height:1.2;min-height:38px} }
+
+  </style>
 </head>
 <body>
 <div class="app" id="app">
@@ -251,7 +251,7 @@ a{color:var(--accent)}
     <h3>Join a server</h3>
     <small>Enter your shared <strong>Server Code</strong> to sync with others.</small>
     <div class="modal-row">
-      <input id="server-code-input" placeholder="e.g. gold-team" inputmode="text" />
+      <input id="server-code-input" placeholder="e.g. gold-team" inputmode="text" style="font-size:16px">
       <button id="server-code-join" class="btn small">Join</button>
     </div>
     <button id="server-continue" class="btn small" style="margin-top:8px">Continue without sync</button>
@@ -301,48 +301,81 @@ maptilersdk.config.apiKey = 'f9B8Wv0ythtbvpcK0QEw';
 const CUSTOM_STYLE = 'https://api.maptiler.com/maps/01994e5b-af91-7fae-b8bd-a68c497abf96/style.json?key=' + maptilersdk.config.apiKey;
 
 const mapgl = new maptilersdk.Map({ container:'mapgl', style:CUSTOM_STYLE, center:[103.8198,1.3521], zoom:12 });
-// Run all queued callbacks once the style loads (prevents skipped layers)
+
 const _glReadyQueue = [];
-let _glReadyBound = false;
+let _glDrainScheduled = false;
+
+function glIsTrulyReady() {
+  try {
+    return mapgl &&
+           typeof mapgl.isStyleLoaded === 'function' &&
+           mapgl.isStyleLoaded() &&
+           typeof mapgl.areTilesLoaded === 'function' &&
+           mapgl.areTilesLoaded();
+  } catch { return false; }
+}
+
+function drainGlQueueIfReady() {
+  if (!glIsTrulyReady()) return;
+  const q = _glReadyQueue.splice(0, _glReadyQueue.length);
+  _glDrainScheduled = false;
+  for (const fn of q) {
+    try { fn(); } catch (e) { console.warn('glReady callback error:', e); }
+  }
+}
+
+// Schedule a drain attempt on the next true-idle frame.
+function scheduleGlDrain() {
+  if (_glDrainScheduled) return;
+  _glDrainScheduled = true;
+
+  const tryDrain = () => {
+    // If ready now, drain immediately.
+    if (glIsTrulyReady()) {
+      drainGlQueueIfReady();
+      return;
+    }
+    // Not ready yet: wait for the next idle.
+    mapgl.once('idle', () => {
+      // Small micro-delay helps after setStyle() churn.
+      requestAnimationFrame(drainGlQueueIfReady);
+    });
+  };
+
+  // If map already loaded, try now; else wait for load.
+  if (mapgl && mapgl.loaded && mapgl.loaded()) {
+    tryDrain();
+  } else {
+    mapgl.once('load', tryDrain);
+  }
+}
 
 function glReady(fn) {
-  // Check multiple conditions for readiness
-  if (mapgl.isStyleLoaded && mapgl.isStyleLoaded() && mapgl.loaded && mapgl.loaded()) {
-    fn();
+  if (glIsTrulyReady()) {
+    // Already ready—run immediately.
+    try { fn(); } catch (e) { console.warn('glReady callback error:', e); }
     return;
   }
-  
   _glReadyQueue.push(fn);
-  
-  if (!_glReadyBound) {
-    _glReadyBound = true;
+  scheduleGlDrain();
+}
+
+// Optional: when you call mapgl.setStyle(...), ask to re-check readiness.
+mapgl.on('styledata', () => {
+  // Don’t drain immediately; wait for idle to avoid early execution.
+  if (_glReadyQueue.length) scheduleGlDrain();
+});  
+     
+    mapgl.on('load', drainGlQueueIfReady);
+    mapgl.on('styledata', drainGlQueueIfReady);
+    mapgl.on('idle', drainGlQueueIfReady);
     
-    // Listen to multiple events to catch all loading scenarios
-    const executeQueue = () => {
-      if (_glReadyQueue.length === 0) return;
-      const q = _glReadyQueue.splice(0, _glReadyQueue.length);
-      q.forEach(f => {
-        try { 
-          f(); 
-        } catch(e) { 
-          console.warn('glReady callback error:', e); 
-        }
-      });
-    };
-    
-    mapgl.on('load', executeQueue);
-    mapgl.on('styledata', executeQueue);
-    mapgl.on('idle', executeQueue);
-    
-    // Fallback timeout
     setTimeout(() => {
       if (_glReadyQueue.length > 0) {
         console.warn('glReady timeout, force-executing queue');
-        executeQueue();
+        drainGlQueueIfReady();
       }
     }, 2000);
-  }
-}
 
 
 // Allow smoother fractional zoom (optional but feels nicer)
@@ -870,30 +903,6 @@ function zoomToFeature(entry, fid){
 
 
 /* === Move feature to another group === */
-function getOrCreateLayerByName(name){
-  let entry = layerList.find(l => l.name === name && !l._deletedLayer);
-  if(!entry){
-    entry = {
-      id: layerSeq++,
-      name,
-      visible: true,
-      data: {type:'FeatureCollection',features:[]},
-      items: [],
-      glSourceId: null,
-      glLayerIds: [],
-      lfGroup: null,
-      lfLayers: null
-    };
-    ensureUniqueLayerId(entry);
-    layerList.push(entry);
-
-    glReady(() => createGroupOnGL(entry, /* clearIfExists */ true));
-    createGroupOnLeaflet(entry, /* rebuild */ true);
-
-    renderGroupsVisibility(); renderLayers(); saveState();
-  }
-  return entry;
-}
 
 function rebuildItemsFromFeatures(features){
   return (features||[])
@@ -1617,8 +1626,47 @@ document.getElementById('server-continue').addEventListener('click', ()=>{
 
 /* ====================== AUDIO + SFX ====================== */
 let audioEnabled = true;
-const bgm = new Audio('Evening Traveler - Road Trip.mp3'); bgm.volume = 0.15; bgm.loop = true;
-document.addEventListener('visibilitychange', ()=>{ if(document.hidden) bgm.pause(); else if(audioEnabled) bgm.play().catch(()=>{}); });
+
+// === BGM setup ===
+const BGM_CAP = 0.10;
+let userBgmSetting = 1;
+const bgmTargetVolume = () => BGM_CAP * userBgmSetting;
+
+const bgm = new Audio('Evening Traveler - Road Trip.mp3');
+bgm.volume = Math.min(bgmTargetVolume(), 1);
+bgm.loop = true;
+
+// Fade helper
+const fadeAudio = (a, to = 0, ms = 400) => new Promise(res => {
+  const from = a.volume || 0, t0 = performance.now();
+  const step = t => {
+    const k = Math.min(1, (t - t0) / ms);
+    a.volume = from + (to - from) * k;
+    k < 1 ? requestAnimationFrame(step) : res();
+  };
+  requestAnimationFrame(step);
+});
+
+// Stop helpers
+const stopHtmlAudio = a => { try { a.pause(); a.currentTime = 0; } catch {} };
+const stopAllSfx = () => document.querySelectorAll('audio').forEach(el => { if (el !== bgm) stopHtmlAudio(el); });
+const suspendWebAudio = async () => { try { if (audioCtx?.state !== 'suspended') await audioCtx.suspend(); } catch {} };
+const resumeWebAudio  = async () => { try { if (audioCtx?.state === 'suspended') await audioCtx.resume(); } catch {} };
+
+// Handle tab visibility
+document.addEventListener('visibilitychange', async () => {
+  if (document.hidden) {
+    await fadeAudio(bgm, 0, 350); stopHtmlAudio(bgm); stopAllSfx(); await suspendWebAudio();
+    try { if ('mediaSession' in navigator) { navigator.mediaSession.playbackState='none'; navigator.mediaSession.metadata=null; } } catch {}
+  } else {
+    await resumeWebAudio();
+    if (audioEnabled) { try { bgm.volume=0; bgm.loop=true; await bgm.play(); await fadeAudio(bgm, bgmTargetVolume(), 350); } catch {} }
+  }
+});
+
+// Start audio after user click (required by browsers)
+document.addEventListener("pointerdown", () => { bgm.play().catch(()=>{}); }, { once:true, capture:true });
+
 
 let audioCtx = null, buttonBuffer = null;
 const btnFallbackAudio = new Audio('button.mp3'); btnFallbackAudio.preload = 'auto';
