@@ -68,6 +68,8 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font:14px/
 input[type="url"],select,input[type="text"],input[type="number"]{position:relative;z-index:1;width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:8px;padding:8px 10px;background:var(--panel-2);color:var(--text)}
 #mapgl,#mapleaf{height:100%;width:100%}
 /* Layers list */
+@supports (-webkit-touch-callout: none) { input[type="text"],input[type="url"],input[type="number"],input[type="search"],input[type="email"],input[type="tel"],textarea,select { font-size:16px !important; line-height:1.2; min-height:38px; } }
+
 .layers-empty{padding:14px;position:relative;z-index:1}
 .layer{position:relative;z-index:1;border-bottom:1px solid var(--border);background:var(--panel-2)}
 .layer+.layer{margin-top:10px;border-radius:10px;overflow:hidden}
@@ -210,8 +212,8 @@ a{color:var(--accent)}
 
       <!-- two long rows: lat,lng then radius + Add -->
       <div id="draw-inputs" class="draw-grid" style="display:none;">
-        <input id="draw-coord" type="text" placeholder="Latitude,Longitude (e.g. 1.3521,103.8198)" />
-        <input id="draw-radius" type="number" min="1" step="1" placeholder="Radius (meters)" />
+        <input id="draw-coord" type="text" placeholder="Latitude,Longitude (e.g. 1.3521,103.8198)" inputmode="text" />
+        <input id="draw-radius" type="number" min="1" step="1" placeholder="Radius (meters)" inputmode="decimal" />
         <button class="btn small" id="draw-apply">Add</button>
       </div>
     </div>
@@ -249,7 +251,7 @@ a{color:var(--accent)}
     <h3>Join a server</h3>
     <small>Enter your shared <strong>Server Code</strong> to sync with others.</small>
     <div class="modal-row">
-      <input id="server-code-input" placeholder="e.g. gold-team" />
+      <input id="server-code-input" placeholder="e.g. gold-team" inputmode="text" />
       <button id="server-code-join" class="btn small">Join</button>
     </div>
     <button id="server-continue" class="btn small" style="margin-top:8px">Continue without sync</button>
