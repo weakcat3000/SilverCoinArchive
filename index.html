@@ -129,8 +129,7 @@ a{color:var(--accent)}
 .draw-grid{display:grid;grid-template-columns:1fr auto;gap:8px}
 .draw-grid #draw-coord{grid-column:1/-1}
 /* Sonar */
-.sonar-btn{position:fixed;right:16px;bottom:16px;z-index:1500;width:64px;height:64px;border-radius:12px;background:#0e1420;border:1px solid var(--border);box-shadow:0 8px 24px rgba(0,0,0,.35);background-image:url('metal-sonar.png');background-
-size:cover;background-position:center;cursor:pointer}
+.sonar-btn{position:fixed;right:16px;bottom:16px;z-index:1500;width:64px;height:64px;border-radius:12px;background:#0e1420;border:1px solid var(--border);box-shadow:0 8px 24px rgba(0,0,0,.35);background-image:url('metal-sonar.png');background-size:contain;background-repeat:no-repeat;background-position:center;cursor:pointer}
 .sheets-btn{position:fixed;left:calc(var(--side) + 16px);bottom:16px;z-index:900;width:56px;height:56px;border-radius:12px;background:#0e1420;border:1px solid var(--border);box-shadow:0 8px 24px rgba(0,0,0,.35);cursor:pointer;display:grid;place-items:center;transition:left .28s ease}
 .app.ui-collapsed .sheets-btn{left:16px}
 .app:not(.ui-collapsed) .sheets-btn{left:calc(var(--side) + 16px)}
@@ -1969,7 +1968,7 @@ scanNow.addEventListener('click', async ()=>{
   if(!lastUserPos){ alert('GPS not ready.'); return; }
   try{ sonarSfx.currentTime=0; if(audioEnabled) sonarSfx.play(); }catch{}
   scanWait.classList.add('visible'); scanNow.disabled=true;
-  await new Promise(r=>setTimeout(r, 1000));
+  await new Promise(r=>setTimeout(r, 3000));
   addSonarCircle(lastUserPos, sonarRadius, sonarColor);
   scanNow.disabled=false; scanWait.classList.remove('visible'); closeSonar();
 });
