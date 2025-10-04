@@ -129,7 +129,17 @@ a{color:var(--accent)}
 .draw-grid{display:grid;grid-template-columns:1fr auto;gap:8px}
 .draw-grid #draw-coord{grid-column:1/-1}
 /* Sonar */
-.sonar-btn{position:fixed;right:16px;bottom:16px;z-index:1500;width:64px;height:64px;border-radius:12px;background:#0e1420;border:1px solid var(--border);box-shadow:0 8px 24px rgba(0,0,0,.35);background-image:url('metal-sonar.png');background-size:cover;background-position:center;cursor:pointer}
+.sonar-btn{position:fixed;right:16px;bottom:16px;z-index:1500;width:64px;height:64px;border-radius:12px;background:#0e1420;border:1px solid var(--border);box-shadow:0 8px 24px rgba(0,0,0,.35);background-image:url('metal-sonar.png');background-
+size:cover;background-position:center;cursor:pointer}
+.sheets-btn{position:fixed;left:calc(var(--side) + 16px);bottom:16px;z-index:900;width:56px;height:56px;border-radius:12px;background:#0e1420;border:1px solid var(--border);box-shadow:0 8px 24px rgba(0,0,0,.35);cursor:pointer;display:grid;place-items:center;transition:left .28s ease}
+.app.ui-collapsed .sheets-btn{left:16px}
+.app:not(.ui-collapsed) .sheets-btn{left:calc(var(--side) + 16px)}
+.sheets-btn svg{width:28px;height:28px;stroke:#e5e7eb;fill:none;stroke-width:2}
+.sheets-view{position:fixed;inset:0;z-index:3000;background:var(--bg);display:none;flex-direction:column}
+.sheets-view.active{display:flex}
+.sheets-header{padding:12px 16px;background:var(--panel);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+.sheets-header h3{margin:0;font-size:16px;font-weight:700}
+.sheets-frame{flex:1;width:100%;border:none}
 .sonar-btn.disabled{opacity:.5;filter:grayscale(60%)}
 .sonar-options{display:grid;gap:10px;margin-top:10px}
 .seg{display:flex;gap:8px;flex-wrap:wrap}
@@ -208,7 +218,10 @@ a{color:var(--accent)}
 
     <!-- Draw Circle quick tool -->
     <div style="padding:12px;border-bottom:1px solid var(--border);display:grid;gap:8px; position:relative; z-index:1;">
-      <button class="btn" id="draw-circle">DRAW CIRCLE</button>
+      <div style="display:grid;grid-template-columns:1fr auto;gap:8px;">
+        <button class="btn" id="draw-circle">DRAW CIRCLE</button>
+        <button class="btn" id="pick-location" title="Pick location from map">📍</button>
+      </div>
 
       <!-- two long rows: lat,lng then radius + Add -->
       <div id="draw-inputs" class="draw-grid" style="display:none;">
@@ -294,6 +307,38 @@ a{color:var(--accent)}
 
 <!-- Floating Sonar Button -->
 <button id="sonar-btn" class="sonar-btn disabled" title="Turn on GPS to use Sonar"></button>
+
+<!-- Sheets Button -->
+<button id="sheets-btn" class="sheets-btn" title="Open Google Sheets">
+  <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+</button>
+
+<!-- Sheets View -->
+<div id="sheets-view" class="sheets-view">
+  <div class="sheets-header">
+    <h3>Google Sheets Editor</h3>
+    <button id="sheets-close" class="btn small">Back to Map</button>
+  </div>
+  <iframe id="sheets-frame" class="sheets-frame" allowfullscreen></iframe>
+</div>
+
+<!-- Sheets Link Modal -->
+<div id="sheets-modal" class="modal">
+  <div class="modal-card">
+    <h3>Google Sheets Setup</h3>
+    <small>Paste the <strong>embed iframe link</strong> from Google Sheets (File → Share → Publish to web → Embed).</small>
+    <div style="margin-top:12px">
+      <textarea id="sheets-input" placeholder='<iframe src="https://docs.google.com/spreadsheets/d/e/..." ...'
+        style="width:100%;min-height:100px;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--panel-2);color:var(--text);font-family:monospace;font-size:12px;resize:vertical"></textarea>
+    </div>
+    <div class="modal-row" style="margin-top:12px">
+      <button id="sheets-save" class="btn small">Save Link</button>
+      <button id="sheets-cancel" class="btn small">Cancel</button>
+    </div>
+    <div id="sheets-error" class="err"></div>
+  </div>
+</div>
+
 
 <script>
 /* ================= Map engines ================= */
@@ -1090,6 +1135,79 @@ byId('draw-apply').addEventListener('click', ()=>{
   addCircleToLayer([lng,lat], radius, 'red', 'Circles'); // always into Circles layer
 });
 
+/* Pick Location tool */
+let pickingLocation = false;
+
+byId('pick-location').addEventListener('click', ()=>{
+  pickingLocation = !pickingLocation;
+  const btn = byId('pick-location');
+  
+  if(pickingLocation){
+    btn.style.background = 'rgba(96,165,250,0.2)';
+    btn.style.borderColor = '#60a5fa';
+    btn.title = 'Click map to get coordinates (click again to cancel)';
+    mapgl.getCanvas().style.cursor = 'crosshair';
+    if(engine === 'leaf') mapleaf.getContainer().style.cursor = 'crosshair';
+  } else {
+    btn.style.background = '';
+    btn.style.borderColor = '';
+    btn.title = 'Pick location from map';
+    mapgl.getCanvas().style.cursor = '';
+    if(engine === 'leaf') mapleaf.getContainer().style.cursor = '';
+  }
+});
+
+// GL click handler
+mapgl.on('click', (e)=>{
+  if(!pickingLocation) return;
+  e.originalEvent.preventDefault();
+  e.originalEvent.stopPropagation();
+  
+  const {lng, lat} = e.lngLat;
+  
+  // Fill the coordinate input box
+  byId('draw-coord').value = `${lat.toFixed(6)},${lng.toFixed(6)}`;
+  
+  // Show the draw inputs if hidden
+  drawBox.style.display = 'grid';
+  
+  // Reset pick mode
+  pickingLocation = false;
+  const btn = byId('pick-location');
+  btn.style.background = '';
+  btn.style.borderColor = '';
+  btn.title = 'Pick location from map';
+  mapgl.getCanvas().style.cursor = '';
+  
+  // Optional: play click sound
+  playClick();
+});
+
+// Leaflet click handler
+mapleaf.on('click', (e)=>{
+  if(!pickingLocation) return;
+  e.originalEvent.preventDefault();
+  e.originalEvent.stopPropagation();
+  
+  const {lat, lng} = e.latlng;
+  
+  // Fill the coordinate input box
+  byId('draw-coord').value = `${lat.toFixed(6)},${lng.toFixed(6)}`;
+  
+  // Show the draw inputs if hidden
+  drawBox.style.display = 'grid';
+  
+  // Reset pick mode
+  pickingLocation = false;
+  const btn = byId('pick-location');
+  btn.style.background = '';
+  btn.style.borderColor = '';
+  btn.title = 'Pick location from map';
+  mapleaf.getContainer().style.cursor = '';
+  
+  // Optional: play click sound
+  playClick();
+});
 /* ===== Sidebar minimize / reopen ===== */
 const appEl=document.getElementById('app'), sidebarEl=document.getElementById('sidebar'), btnHide=document.getElementById('ui-hide'), btnReopen=document.getElementById('ui-reopen');
 function collapseUI(){ appEl.classList.add('ui-collapsed'); document.documentElement.style.setProperty('--side','0px'); }
@@ -1720,7 +1838,7 @@ audioBtn.addEventListener('click', ()=>{
 });
 document.addEventListener('click', (ev)=>{ if(ev.target.closest('button')) playClick(); }, {capture:true});
 
-const sonarSfx = new Audio('sonar-sound.mp3');
+const sonarSfx = new Audio('scanning.mp3');
 
 /* ====================== GPS CONTROLS ====================== */
 let geolocate = null;
@@ -1856,6 +1974,168 @@ scanNow.addEventListener('click', async ()=>{
   scanNow.disabled=false; scanWait.classList.remove('visible'); closeSonar();
 });
 
+/* ====================== GOOGLE SHEETS INTEGRATION ====================== */
+const sheetsBtn = byId('sheets-btn');
+const sheetsView = byId('sheets-view');
+const sheetsFrame = byId('sheets-frame');
+const sheetsClose = byId('sheets-close');
+const sheetsModal = byId('sheets-modal');
+const sheetsInput = byId('sheets-input');
+const sheetsSave = byId('sheets-save');
+const sheetsCancel = byId('sheets-cancel');
+const sheetsError = byId('sheets-error');
+
+let currentSheetUrl = null;
+
+// Extract src from iframe HTML or return direct URL
+function extractSheetUrl(input){
+  const trimmed = input.trim();
+  // If it's an iframe tag, extract src
+  const srcMatch = trimmed.match(/src=["']([^"']+)["']/i);
+  if(srcMatch) return srcMatch[1];
+  // If it's already a URL
+  if(/^https?:\/\//i.test(trimmed)) return trimmed;
+  return null;
+}
+
+// Fetch sheet URL from Supabase
+async function fetchSheetUrl(){
+  if(!currentRoomCode) return null;
+  try{
+    const { data, error } = await supabase
+      .from('rooms')
+      .select('sheet_url')
+      .eq('code', currentRoomCode)
+      .maybeSingle();
+    if(error) throw error;
+    return data?.sheet_url || null;
+  }catch(e){
+    console.error('Failed to fetch sheet URL:', e);
+    return null;
+  }
+}
+
+// Save sheet URL to Supabase
+async function saveSheetUrl(url){
+  if(!currentRoomCode) return false;
+  try{
+    const { error } = await supabase
+      .from('rooms')
+      .update({ sheet_url: url, updated_at: new Date().toISOString() })
+      .eq('code', currentRoomCode);
+    if(error) throw error;
+    return true;
+  }catch(e){
+    console.error('Failed to save sheet URL:', e);
+    return false;
+  }
+}
+
+// Open sheets view
+function openSheetsView(url){
+  if(!url){
+    alert('No valid sheet URL provided');
+    return;
+  }
+  sheetsFrame.src = url;
+  sheetsView.classList.add('active');
+  appEl.classList.add('blocked-by-modal');
+}
+
+// Close sheets view
+function closeSheetsView(){
+  sheetsView.classList.remove('active');
+  appEl.classList.remove('blocked-by-modal');
+  sheetsFrame.src = '';
+}
+
+// Show sheets modal
+function showSheetsModal(existingUrl = ''){
+  sheetsInput.value = existingUrl;
+  sheetsError.style.display = 'none';
+  sheetsModal.classList.add('visible');
+  appEl.classList.add('blocked-by-modal');
+}
+
+// Hide sheets modal
+function hideSheetsModal(){
+  sheetsModal.classList.remove('visible');
+  appEl.classList.remove('blocked-by-modal');
+  sheetsInput.value = '';
+}
+
+// Main sheets button click
+sheetsBtn.addEventListener('click', async ()=>{
+  if(!currentRoomCode){
+    alert('Please join a server first to use Google Sheets integration.');
+    return;
+  }
+  
+  // Fetch current sheet URL
+  currentSheetUrl = await fetchSheetUrl();
+  
+  if(currentSheetUrl){
+    // Ask user what to do
+    const choice = confirm('A Google Sheet is already linked.\n\nClick OK to open it, or Cancel to change the link.');
+    if(choice){
+      openSheetsView(currentSheetUrl);
+    } else {
+      showSheetsModal(currentSheetUrl);
+    }
+  } else {
+    // No link exists, prompt for one
+    showSheetsModal();
+  }
+});
+
+// Save button
+sheetsSave.addEventListener('click', async ()=>{
+  const input = sheetsInput.value.trim();
+  if(!input){
+    sheetsError.textContent = 'Please paste an iframe embed code or URL.';
+    sheetsError.style.display = 'block';
+    return;
+  }
+  
+  const url = extractSheetUrl(input);
+  if(!url || !url.includes('docs.google.com')){
+    sheetsError.textContent = 'Invalid Google Sheets URL. Please paste the iframe embed code from "Publish to web".';
+    sheetsError.style.display = 'block';
+    return;
+  }
+  
+  sheetsError.style.display = 'none';
+  sheetsSave.disabled = true;
+  sheetsSave.textContent = 'Saving...';
+  
+  const success = await saveSheetUrl(url);
+  
+  if(success){
+    currentSheetUrl = url;
+    hideSheetsModal();
+    openSheetsView(url);
+  } else {
+    sheetsError.textContent = 'Failed to save. Check your connection.';
+    sheetsError.style.display = 'block';
+  }
+  
+  sheetsSave.disabled = false;
+  sheetsSave.textContent = 'Save Link';
+});
+
+// Cancel button
+sheetsCancel.addEventListener('click', hideSheetsModal);
+
+// Close sheets view button
+sheetsClose.addEventListener('click', closeSheetsView);
+
+// Close modal when clicking outside
+sheetsModal.addEventListener('click', (e)=>{
+  if(e.target === sheetsModal) hideSheetsModal();
+});
+
+
+
 /* ================= Startup ================= */
 window.addEventListener('DOMContentLoaded', ()=>{
   try{
@@ -1913,7 +2193,6 @@ const RESEED_EVERY_SEC=0;            // e.g., 60 to reseed each minute
 
 /* ===== DO NOT EDIT BELOW (minified) ===== */
 (function(){const c=document.getElementById('darkveil');if(!c)return;c.style.opacity=".5";const gl=c.getContext('webgl',{alpha:!0,premultipliedAlpha:!1})||c.getContext('experimental-webgl');if(!gl){console.warn('DarkVeil fallback');return}const VS='attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}';const FS='precision mediump float;uniform vec2 r;uniform float t,B,n,s,f,W,ang,seed;uniform float rw;uniform vec3 Cb,Lp,Dp;uniform vec4 A1,A2,A3;uniform vec3 J;uniform float jdir;float rnd(vec2 p){return fract(sin(dot(p,vec2(12.9898,78.233))+seed)*43758.5453);}float n1(vec2 p){vec2 i=floor(p),f=fract(p);vec2 u=f*f*(3.0-2.0*f);float a=rnd(i),b=rnd(i+vec2(1.,0.)),c=rnd(i+vec2(0.,1.)),d=rnd(i+vec2(1.,1.));return mix(mix(a,b,u.x),mix(c,d,u.x),u.y);}vec2 warpN(vec2 p){vec2 g=vec2(n1(p*1.1+seed),n1(p*1.3-seed));return p+rw*(g-0.5);}vec2 warpS(vec2 p){return p+W*vec2(sin(2.1*p.y+0.9*t),cos(2.0*p.x-0.7*t));}float tri(float x){return 1.0-abs(fract(x)-0.5)*2.0;}float band(vec2 p,vec2 d,float freq,float width,float off,float k){p=warpS(warpN(p));float tf=t*mix(1.0,1.6,k);float jf=n1(p*1.2+tf*0.37+seed)-0.5;float jw=n1(p*1.5-tf*0.29-seed)-0.5;float jo=n1(p*0.9+tf*0.41+seed*0.5)-0.5;float F=freq*(1.0+J.x*jf),W=clamp(width*(1.0+J.y*jw),0.05,0.95),O=off+J.z*jo;float x=dot(p,d)*F - tf + O;float v=tri(x);return smoothstep(1.0-W,1.0,v);}void main(){vec2 uv=(gl_FragCoord.xy/r)*2.-1.;uv.y*=-1.;float asp=r.x/r.y;vec2 p=vec2(uv.x*asp,uv.y);float a=ang + jdir*(n1(vec2(ang*0.17,ang*0.23)+seed)-0.5);vec2 d=normalize(vec2(cos(a),sin(a)));vec3 col=Cb;float m1=band(p,d,A1.z,A1.y,A1.w,0.25);float m2=band(p,d,A2.z,A2.y,A2.w,0.55);float m3=band(p,d,A3.z,A3.y,A3.w,0.85);col=mix(col,Lp,clamp(m1*A1.x,0.,1.));col=mix(col,Dp,clamp(m2*A2.x,0.,1.));col=mix(col,vec3(0.),clamp(m3*A3.x,0.,1.));col*=B;col=pow(col,vec3(0.92));float sl=sin(gl_FragCoord.y*f)*.5+.5;col*=1.-(sl*sl)*s;col+=(rnd(gl_FragCoord.xy+t)-.5)*n*.8;gl_FragColor=vec4(clamp(col,0.,1.),1.);}';function S(t,s){const x=gl.createShader(t);gl.shaderSource(x,s);gl.compileShader(x);return x}const pr=gl.createProgram();gl.attachShader(pr,S(gl.VERTEX_SHADER,VS));gl.attachShader(pr,S(gl.FRAGMENT_SHADER,FS));gl.linkProgram(pr);gl.useProgram(pr);const b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);const a=gl.getAttribLocation(pr,'p');gl.enableVertexAttribArray(a);gl.vertexAttribPointer(a,2,gl.FLOAT,!1,0,0);const uR=gl.getUniformLocation(pr,'r'),uT=gl.getUniformLocation(pr,'t'),uA=gl.getUniformLocation(pr,'ang');const uSeed=gl.getUniformLocation(pr,'seed');gl.uniform1f(gl.getUniformLocation(pr,'B'),BRIGHTNESS);gl.uniform1f(gl.getUniformLocation(pr,'n'),NOISE);gl.uniform1f(gl.getUniformLocation(pr,'s'),SCAN_S);gl.uniform1f(gl.getUniformLocation(pr,'f'),SCAN_F);gl.uniform1f(gl.getUniformLocation(pr,'W'),WARP);gl.uniform1f(gl.getUniformLocation(pr,'rw'),RAND_WARP);gl.uniform3f(gl.getUniformLocation(pr,'Cb'),BASE_PURPLE[0],BASE_PURPLE[1],BASE_PURPLE[2]);gl.uniform3f(gl.getUniformLocation(pr,'Lp'),ACC_LIGHT[0],ACC_LIGHT[1],ACC_LIGHT[2]);gl.uniform3f(gl.getUniformLocation(pr,'Dp'),ACC_DARK[0],ACC_DARK[1],ACC_DARK[2]);gl.uniform4f(gl.getUniformLocation(pr,'A1'),STR1,WIDTH1,FREQ1,OFF1);gl.uniform4f(gl.getUniformLocation(pr,'A2'),STR2,WIDTH2,FREQ2,OFF2);gl.uniform4f(gl.getUniformLocation(pr,'A3'),STR3,WIDTH3,FREQ3,OFF3);gl.uniform3f(gl.getUniformLocation(pr,'J'),JIT_FREQ,JIT_WIDTH,JIT_OFFSET);gl.uniform1f(gl.getUniformLocation(pr,'jdir'),JIT_DIR);const rs=()=>{const w=(c.parentElement?.clientWidth||c.width)|0,h=(c.parentElement?.clientHeight||c.height)|0,W=(w*RES_SCALE)|0,H=(h*RES_SCALE)|0;if(c.width!==W||c.height!==H){c.width=Math.max(1,W);c.height=Math.max(1,H);gl.viewport(0,0,c.width,c.height)}gl.uniform2f(uR,c.width,c.height)};addEventListener('resize',rs,{passive:!0});rs();let st=performance.now(),raf,lastSeed=RAND_SEED,seed=lastSeed,seedAt=0;(function loop(){const now=(performance.now()-st)/1e3;gl.uniform1f(uT,now*SPEED);gl.uniform1f(uA,now*ANGLE_SPEED);if(RESEED_EVERY_SEC>0&&(now-seedAt)>RESEED_EVERY_SEC){seedAt=now;seed=Math.random()*1000;}gl.uniform1f(uSeed,seed);gl.drawArrays(gl.TRIANGLES,0,3);raf=requestAnimationFrame(loop)})();document.addEventListener('visibilitychange',()=>{if(document.hidden)cancelAnimationFrame(raf);else{st=performance.now();(function loop(){const now=(performance.now()-st)/1e3;gl.uniform1f(uT,now*SPEED);gl.uniform1f(uA,now*ANGLE_SPEED);gl.uniform1f(uSeed,seed);gl.drawArrays(gl.TRIANGLES,0,3);raf=requestAnimationFrame(loop)})()}})})();
-
 
 
 
