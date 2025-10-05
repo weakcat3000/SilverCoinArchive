@@ -158,6 +158,16 @@ a{color:var(--accent)}
 /* Hide duplicate geolocate controls */
 .maplibregl-ctrl-top-right .maplibregl-ctrl-group:has(.maplibregl-ctrl-geolocate) ~ .maplibregl-ctrl-group:has(.maplibregl-ctrl-geolocate){display:none!important}
 @supports (-webkit-touch-callout: none) { #server-code-input,#draw-coord,#draw-radius,#url-input,input,select,textarea{font-size:16px!important;line-height:1.2;min-height:38px} }
+.maplibregl-ctrl-bottom-right {
+  display: none !important;
+}
+/* Stronger selectors to hide MapTiler logo at bottom-left */
+#mapgl .maplibregl-ctrl-logo,
+#mapgl .maptilersdk-ctrl-logo,
+#mapgl .maplibregl-ctrl-bottom-left {
+  display: none !important;
+}
+
 
   </style>
 </head>
@@ -315,7 +325,7 @@ a{color:var(--accent)}
 <!-- Sheets View -->
 <div id="sheets-view" class="sheets-view">
   <div class="sheets-header">
-    <h3>Google Sheets Editor</h3>
+    <h3>Sqkii Mapper - Google Sheets</h3>
     <button id="sheets-close" class="btn small">Back to Map</button>
   </div>
   <iframe id="sheets-frame" class="sheets-frame" allowfullscreen></iframe>
