@@ -1956,158 +1956,88 @@ document.getElementById('server-continue').addEventListener('click', ()=>{
 });
 
 /* ====================== AUDIO + SFX (REWRITTEN, STABLE) ====================== */
-/* Goals:
-   - Never kill BGM on simple clicks (no blur/freeze listeners).
-   - Unlock + play SFX immediately on pointerdown (no cutoffs).
-   - Only suspend audio when the tab truly goes background via visibilitychange.
-*/
+/* ====================== AUDIO + SFX ====================== */
+let audioEnabled = true;
 
-let audioEnabled = true; // toggled by the header button
-
-/* --- Music (BGM) --- */
-const BGM_CAP = 0.10;            // max loudness cap
-let userBgmSetting = 1;          // 0..1 (if you add a slider later)
+// === BGM setup ===
+const BGM_CAP = 0.10;
+let userBgmSetting = 1;
 const bgmTargetVolume = () => BGM_CAP * userBgmSetting;
 
 const bgm = new Audio('Evening Traveler - Road Trip.mp3');
-bgm.loop = true;
 bgm.volume = Math.min(bgmTargetVolume(), 1);
+bgm.loop = true;
 
-/* --- WebAudio context + SFX buffers --- */
-let audioCtx = null;
-let buttonBuffer = null;
+// Fade helper
+const fadeAudio = (a, to = 0, ms = 400) => new Promise(res => {
+  const from = a.volume || 0, t0 = performance.now();
+  const step = t => {
+    const k = Math.min(1, (t - t0) / ms);
+    a.volume = from + (to - from) * k;
+    k < 1 ? requestAnimationFrame(step) : res();
+  };
+  requestAnimationFrame(step);
+});
+
+// Stop helpers
+const stopHtmlAudio = a => { try { a.pause(); a.currentTime = 0; } catch {} };
+const stopAllSfx = () => document.querySelectorAll('audio').forEach(el => { if (el !== bgm) stopHtmlAudio(el); });
+const suspendWebAudio = async () => { try { if (audioCtx?.state !== 'suspended') await audioCtx.suspend(); } catch {} };
+const resumeWebAudio  = async () => { try { if (audioCtx?.state === 'suspended') await audioCtx.resume(); } catch {} };
+
+// Handle tab visibility
+document.addEventListener('visibilitychange', async () => {
+  if (document.hidden) {
+    await fadeAudio(bgm, 0, 350); stopHtmlAudio(bgm); stopAllSfx(); await suspendWebAudio();
+    try { if ('mediaSession' in navigator) { navigator.mediaSession.playbackState='none'; navigator.mediaSession.metadata=null; } } catch {}
+  } else {
+    await resumeWebAudio();
+    if (audioEnabled) { try { bgm.volume=0; bgm.loop=true; await bgm.play(); await fadeAudio(bgm, bgmTargetVolume(), 350); } catch {} }
+  }
+});
+
+// Start audio after user click (required by browsers)
+document.addEventListener("pointerdown", () => { bgm.play().catch(()=>{}); }, { once:true, capture:true });
+
+
+let audioCtx = null, buttonBuffer = null;
 const btnFallbackAudio = new Audio('button.mp3'); btnFallbackAudio.preload = 'auto';
 
-const sonarSfx = new Audio('scanning.mp3'); // used by playSonar()
-
-function ensureAudioCtx(){
-  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  return audioCtx;
-}
-async function resumeWebAudio(){ try { const ctx = ensureAudioCtx(); if (ctx.state === 'suspended') await ctx.resume(); } catch {} }
-async function suspendWebAudio(){ try { if (audioCtx && audioCtx.state !== 'suspended') await audioCtx.suspend(); } catch {} }
-
-function fadeAudio(a, to = 0, ms = 250){
-  return new Promise(res => {
-    const from = a.volume || 0, t0 = performance.now();
-    const step = t => {
-      const k = Math.min(1, (t - t0) / ms);
-      a.volume = from + (to - from) * k;
-      if (k < 1) requestAnimationFrame(step); else res();
-    };
-    requestAnimationFrame(step);
-  });
-}
-function stopHtmlAudio(a){ try { a.pause(); } catch {} }
-function stopAllSfx(){ document.querySelectorAll('audio').forEach(el => { if (el !== bgm) stopHtmlAudio(el); }); }
-
-/* Preload button click into a WebAudio buffer (fast + never gets cut) */
-(async () => {
-  try {
-    const res = await fetch('button.mp3', { cache: 'force-cache' });
-    const ab  = await res.arrayBuffer();
-    const ctx = ensureAudioCtx();
-    // safari-friendly decode
+(async ()=>{
+  try{
+    const res = await fetch('button.mp3', { cache:'force-cache' });
+    const ab = await res.arrayBuffer();
+    audioCtx = audioCtx || new (window.AudioContext||window.webkitAudioContext)();
     try {
-      buttonBuffer = await new Promise((resolve, reject) => {
-        const p = ctx.decodeAudioData(ab.slice(0), resolve, reject);
-        if (p && p.then) p.then(resolve).catch(reject);
+      buttonBuffer = await new Promise((resolve,reject)=>{
+        const p = audioCtx.decodeAudioData(ab.slice(0), resolve, reject);
+        if (p && typeof p.then === 'function') p.then(resolve).catch(reject);
       });
     } catch {
-      ctx.decodeAudioData(ab.slice(0), buf => buttonBuffer = buf, () => {});
+      audioCtx.decodeAudioData(ab.slice(0), buf=>buttonBuffer=buf, ()=>{});
     }
-  } catch (e) {
-    console.warn('button.mp3 preload failed', e);
-  }
+  }catch(e){ console.warn('button.mp3 preload failed', e); }
 })();
 
-/* SFX: button click */
+function ensureAudioCtxResumed(){ try{ if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); }catch{} }
 function playClick(){
-  try {
-    if (!audioEnabled || document.hidden) return;
-    const ctx = ensureAudioCtx();
-    if (ctx.state === 'suspended') ctx.resume().catch(()=>{});
-    if (buttonBuffer){
-      const src = ctx.createBufferSource();
-      src.buffer = buttonBuffer;
-      src.connect(ctx.destination);
-      src.start(0);
-    } else {
+  try{
+    if(!audioEnabled) return;
+    ensureAudioCtxResumed();
+    if(buttonBuffer && audioCtx){
+      const src = audioCtx.createBufferSource(); src.buffer = buttonBuffer; src.connect(audioCtx.destination); src.start(0);
+    }else{
       btnFallbackAudio.currentTime = 0;
       btnFallbackAudio.play().catch(()=>{});
     }
-  } catch {}
+  }catch(e){}
 }
+document.addEventListener('pointerdown', ()=>{
+  ensureAudioCtxResumed();
+  if(audioEnabled && !document.hidden){ bgm.play().catch(()=>{}); }
+  playClick();
+},{once:true,capture:true});
 
-/* BGM: safe start w/ autoplay handling + fade in */
-function safePlayBgm(){
-  if (!audioEnabled || document.hidden || !bgm.paused) return;
-
-  const start = () => {
-    bgm.volume = 0;
-    bgm.loop   = true;
-    return bgm.play()
-      .then(() => fadeAudio(bgm, bgmTargetVolume(), 250))
-      .catch(() => {
-        // Autoplay blocked: arm next user gesture
-        const once = () => { document.removeEventListener('pointerdown', once, true); safePlayBgm(); };
-        document.addEventListener('pointerdown', once, true);
-      });
-  };
-
-  resumeWebAudio().then(start).catch(start);
-}
-
-/* Media session niceties (optional) */
-function clearMediaSession(){ try { if ('mediaSession' in navigator){ navigator.mediaSession.playbackState = 'none'; navigator.mediaSession.metadata = null; } } catch {} }
-
-/* === Visibility lifecycle (only real tab visibility) === */
-let bgmWasPlaying = false;
-let hiddenDebounce = null;
-let suppressNextResume = false;
-
-async function handleHidden(){
-  suppressNextResume = false;
-  bgmWasPlaying = audioEnabled && !bgm.paused;
-  try { await fadeAudio(bgm, 0, 150); } catch {}
-  stopHtmlAudio(bgm);
-  stopAllSfx();
-  clearMediaSession();
-  await suspendWebAudio();
-}
-
-function handleVisible(){
-  if (suppressNextResume) return;
-  if (bgmWasPlaying) safePlayBgm();
-}
-
-function debouncedHidden(){
-  clearTimeout(hiddenDebounce);
-  hiddenDebounce = setTimeout(handleHidden, 60); // ignore micro “hidden” blips
-}
-
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) debouncedHidden();
-  else handleVisible();
-});
-window.addEventListener('pagehide', handleHidden, { capture: true });
-window.addEventListener('pageshow', () => { suppressNextResume = false; handleVisible(); }, { capture: true });
-
-/* === Unified gesture: unlock + SFX on press (no cutoffs) === */
-document.addEventListener('pointerdown', (ev) => {
-  if (document.hidden) return;
-
-  // Make sure audio engine is live
-  resumeWebAudio().catch(()=>{});
-
-  // Ensure BGM is running if user enabled audio
-  if (audioEnabled && bgm.paused) safePlayBgm();
-
-  // Instant, reliable button 'tap' sound
-  if (ev.target && ev.target.closest('button')) playClick();
-}, { capture:true });
-
-/* === Audio toggle button === */
 const audioBtn = document.getElementById('audio-toggle');
 function setAudioIcon(on){
   audioBtn.innerHTML = on
@@ -2115,31 +2045,14 @@ function setAudioIcon(on){
     : `<svg viewBox="0 0 24 24" fill="none" stroke="#e5e7eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="1" x2="1" y2="23"></line></svg>`;
 }
 setAudioIcon(true);
-
 audioBtn.addEventListener('click', ()=>{
   audioEnabled = !audioEnabled;
   setAudioIcon(audioEnabled);
-
-  if (!audioEnabled) {
-    bgmWasPlaying = false;
-    stopHtmlAudio(bgm);
-    clearMediaSession();
-  } else if (!document.hidden) {
-    bgmWasPlaying = true;
-    safePlayBgm();
-  }
+  if(!audioEnabled) bgm.pause(); else if(!document.hidden) bgm.play().catch(()=>{});
 });
+document.addEventListener('click', (ev)=>{ if(ev.target.closest('button')) playClick(); }, {capture:true});
 
-/* === Public SFX API used elsewhere === */
-function playSonar(){
-  if (!audioEnabled || document.hidden) return;
-  try {
-    resumeWebAudio().catch(()=>{});
-    sonarSfx.currentTime = 0;
-    sonarSfx.play().catch(()=>{});
-  } catch {}
-}
-
+const sonarSfx = new Audio('sonar-sound.mp3');
 
 /* ====================== GPS CONTROLS ====================== */
 let geolocate = null;
