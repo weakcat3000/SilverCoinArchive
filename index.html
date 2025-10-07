@@ -1955,46 +1955,59 @@ document.getElementById('server-continue').addEventListener('click', ()=>{
   try{ const raw=localStorage.getItem(LS_KEY); if(raw) applyStateArray(JSON.parse(raw)); }catch{}
 });
 
-/* ====================== AUDIO + SFX (robust tab switching) ====================== */
-let audioEnabled = true;
+/* ====================== AUDIO + SFX (REWRITTEN, STABLE) ====================== */
+/* Goals:
+   - Never kill BGM on simple clicks (no blur/freeze listeners).
+   - Unlock + play SFX immediately on pointerdown (no cutoffs).
+   - Only suspend audio when the tab truly goes background via visibilitychange.
+*/
 
-/* --- BGM setup --- */
-const BGM_CAP = 0.10;
-let userBgmSetting = 1;
+let audioEnabled = true; // toggled by the header button
+
+/* --- Music (BGM) --- */
+const BGM_CAP = 0.10;            // max loudness cap
+let userBgmSetting = 1;          // 0..1 (if you add a slider later)
 const bgmTargetVolume = () => BGM_CAP * userBgmSetting;
 
 const bgm = new Audio('Evening Traveler - Road Trip.mp3');
 bgm.loop = true;
 bgm.volume = Math.min(bgmTargetVolume(), 1);
 
-let audioCtx = null, buttonBuffer = null;
+/* --- WebAudio context + SFX buffers --- */
+let audioCtx = null;
+let buttonBuffer = null;
 const btnFallbackAudio = new Audio('button.mp3'); btnFallbackAudio.preload = 'auto';
-const sonarSfx = new Audio('scanning.mp3');
 
-const fadeAudio = (a, to = 0, ms = 300) => new Promise(res => {
-  const from = a.volume || 0, t0 = performance.now();
-  const step = t => {
-    const k = Math.min(1, (t - t0) / ms);
-    a.volume = from + (to - from) * k;
-    k < 1 ? requestAnimationFrame(step) : res();
-  };
-  requestAnimationFrame(step);
-});
+const sonarSfx = new Audio('scanning.mp3'); // used by playSonar()
 
-const stopHtmlAudio = a => { try { a.pause(); } catch {} };
-const stopAllSfx = () => document.querySelectorAll('audio').forEach(el => { if (el !== bgm) stopHtmlAudio(el); });
+function ensureAudioCtx(){
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+async function resumeWebAudio(){ try { const ctx = ensureAudioCtx(); if (ctx.state === 'suspended') await ctx.resume(); } catch {} }
+async function suspendWebAudio(){ try { if (audioCtx && audioCtx.state !== 'suspended') await audioCtx.suspend(); } catch {} }
 
-const ensureAudioCtx = () => (audioCtx ||= new (window.AudioContext || window.webkitAudioContext)());
-const suspendWebAudio = async () => { try { if (audioCtx && audioCtx.state !== 'suspended') await audioCtx.suspend(); } catch {} };
-const resumeWebAudio  = async () => { try { if (audioCtx && audioCtx.state === 'suspended') await audioCtx.resume(); } catch {} };
+function fadeAudio(a, to = 0, ms = 250){
+  return new Promise(res => {
+    const from = a.volume || 0, t0 = performance.now();
+    const step = t => {
+      const k = Math.min(1, (t - t0) / ms);
+      a.volume = from + (to - from) * k;
+      if (k < 1) requestAnimationFrame(step); else res();
+    };
+    requestAnimationFrame(step);
+  });
+}
+function stopHtmlAudio(a){ try { a.pause(); } catch {} }
+function stopAllSfx(){ document.querySelectorAll('audio').forEach(el => { if (el !== bgm) stopHtmlAudio(el); }); }
 
-/* --- Preload click buffer (WebAudio) --- */
+/* Preload button click into a WebAudio buffer (fast + never gets cut) */
 (async () => {
   try {
     const res = await fetch('button.mp3', { cache: 'force-cache' });
     const ab  = await res.arrayBuffer();
     const ctx = ensureAudioCtx();
-    // Safari needs callback form sometimes
+    // safari-friendly decode
     try {
       buttonBuffer = await new Promise((resolve, reject) => {
         const p = ctx.decodeAudioData(ab.slice(0), resolve, reject);
@@ -2008,10 +2021,10 @@ const resumeWebAudio  = async () => { try { if (audioCtx && audioCtx.state === '
   }
 })();
 
-/* --- SFX click --- */
+/* SFX: button click */
 function playClick(){
-  try{
-    if(!audioEnabled || document.hidden) return;
+  try {
+    if (!audioEnabled || document.hidden) return;
     const ctx = ensureAudioCtx();
     if (ctx.state === 'suspended') ctx.resume().catch(()=>{});
     if (buttonBuffer){
@@ -2023,90 +2036,78 @@ function playClick(){
       btnFallbackAudio.currentTime = 0;
       btnFallbackAudio.play().catch(()=>{});
     }
-  }catch{}
-}
-
-/* --- Media session niceties (optional) --- */
-function clearMediaSession(){
-  try {
-    if ('mediaSession' in navigator) {
-      navigator.mediaSession.playbackState = 'none';
-      navigator.mediaSession.metadata = null;
-    }
-  } catch {}
-}
-function setMediaSessionPlaying(){
-  try {
-    if ('mediaSession' in navigator) {
-      navigator.mediaSession.playbackState = 'playing';
-      // (optional) set metadata here if you want
-    }
   } catch {}
 }
 
-/* --- Visibility lifecycle --- */
-let bgmWasPlaying = false;      // remember state across tab switches
-let suppressNextResume = false; // prevent double-resume when multiple events fire
+/* BGM: safe start w/ autoplay handling + fade in */
+function safePlayBgm(){
+  if (!audioEnabled || document.hidden || !bgm.paused) return;
+
+  const start = () => {
+    bgm.volume = 0;
+    bgm.loop   = true;
+    return bgm.play()
+      .then(() => fadeAudio(bgm, bgmTargetVolume(), 250))
+      .catch(() => {
+        // Autoplay blocked: arm next user gesture
+        const once = () => { document.removeEventListener('pointerdown', once, true); safePlayBgm(); };
+        document.addEventListener('pointerdown', once, true);
+      });
+  };
+
+  resumeWebAudio().then(start).catch(start);
+}
+
+/* Media session niceties (optional) */
+function clearMediaSession(){ try { if ('mediaSession' in navigator){ navigator.mediaSession.playbackState = 'none'; navigator.mediaSession.metadata = null; } } catch {} }
+
+/* === Visibility lifecycle (only real tab visibility) === */
+let bgmWasPlaying = false;
+let hiddenDebounce = null;
+let suppressNextResume = false;
 
 async function handleHidden(){
   suppressNextResume = false;
   bgmWasPlaying = audioEnabled && !bgm.paused;
-  try { await fadeAudio(bgm, 0, 200); } catch {}
+  try { await fadeAudio(bgm, 0, 150); } catch {}
   stopHtmlAudio(bgm);
   stopAllSfx();
   clearMediaSession();
   await suspendWebAudio();
 }
 
-function safePlayBgm(){
-  if (!audioEnabled || document.hidden) return;
-
-  const tryPlay = () => {
-    bgm.volume = 0;
-    bgm.loop   = true;
-    return bgm.play()
-      .then(() => fadeAudio(bgm, bgmTargetVolume(), 250).then(setMediaSessionPlaying))
-      .catch(() => {
-        // Autoplay blocked: wait for next user gesture
-        const onceResume = () => {
-          document.removeEventListener('pointerdown', onceResume, true);
-          safePlayBgm();
-        };
-        document.addEventListener('pointerdown', onceResume, true);
-      });
-  };
-
-  // Some browsers need the AudioContext resumed first
-  resumeWebAudio().then(tryPlay).catch(tryPlay);
-}
-
 function handleVisible(){
   if (suppressNextResume) return;
-  // If user had music on before, resume; otherwise stay silent
   if (bgmWasPlaying) safePlayBgm();
 }
 
-/* Cover the full matrix of tab/app lifecycle events */
+function debouncedHidden(){
+  clearTimeout(hiddenDebounce);
+  hiddenDebounce = setTimeout(handleHidden, 60); // ignore micro “hidden” blips
+}
+
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) handleHidden();
+  if (document.hidden) debouncedHidden();
   else handleVisible();
 });
-window.addEventListener('pagehide', handleHidden, { capture:true });
-window.addEventListener('freeze',   handleHidden, { capture:true });
-window.addEventListener('blur',     handleHidden, { capture:true });
+window.addEventListener('pagehide', handleHidden, { capture: true });
+window.addEventListener('pageshow', () => { suppressNextResume = false; handleVisible(); }, { capture: true });
 
-window.addEventListener('pageshow', () => { suppressNextResume = false; handleVisible(); }, { capture:true });
-window.addEventListener('focus',    () => { suppressNextResume = false; handleVisible(); }, { capture:true });
-
-/* --- Unlock audio on first user gesture --- */
-document.addEventListener('pointerdown', () => {
+/* === Unified gesture: unlock + SFX on press (no cutoffs) === */
+document.addEventListener('pointerdown', (ev) => {
   if (document.hidden) return;
-  resumeWebAudio().catch(()=>{});
-  if (audioEnabled) safePlayBgm();
-  playClick();
-}, { once:true, capture:true });
 
-/* --- Audio toggle button wiring --- */
+  // Make sure audio engine is live
+  resumeWebAudio().catch(()=>{});
+
+  // Ensure BGM is running if user enabled audio
+  if (audioEnabled && bgm.paused) safePlayBgm();
+
+  // Instant, reliable button 'tap' sound
+  if (ev.target && ev.target.closest('button')) playClick();
+}, { capture:true });
+
+/* === Audio toggle button === */
 const audioBtn = document.getElementById('audio-toggle');
 function setAudioIcon(on){
   audioBtn.innerHTML = on
@@ -2118,6 +2119,7 @@ setAudioIcon(true);
 audioBtn.addEventListener('click', ()=>{
   audioEnabled = !audioEnabled;
   setAudioIcon(audioEnabled);
+
   if (!audioEnabled) {
     bgmWasPlaying = false;
     stopHtmlAudio(bgm);
@@ -2128,16 +2130,14 @@ audioBtn.addEventListener('click', ()=>{
   }
 });
 
-/* Play click for all buttons (but not while hidden) */
-document.addEventListener('click', (ev) => {
-  if (document.hidden) return;
-  if (ev.target.closest('button')) playClick();
-}, { capture:true });
-
-/* Optional: throttle sonar sfx while hidden */
+/* === Public SFX API used elsewhere === */
 function playSonar(){
   if (!audioEnabled || document.hidden) return;
-  try { sonarSfx.currentTime = 0; sonarSfx.play(); } catch {}
+  try {
+    resumeWebAudio().catch(()=>{});
+    sonarSfx.currentTime = 0;
+    sonarSfx.play().catch(()=>{});
+  } catch {}
 }
 
 
