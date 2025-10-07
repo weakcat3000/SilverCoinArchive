@@ -351,6 +351,7 @@ a{color:var(--accent)}
 
 <script>
 /* ================= Map engines ================= */
+const ALL_FILL_LAYER_IDS = [];
 maptilersdk.config.apiKey = 'f9B8Wv0ythtbvpcK0QEw';
 const CUSTOM_STYLE = 'https://api.maptiler.com/maps/01994e5b-af91-7fae-b8bd-a68c497abf96/style.json?key=' + maptilersdk.config.apiKey;
 
@@ -438,7 +439,9 @@ const mapleaf = L.map('mapleaf', {
   attributionControl: true,
   zoomSnap: 0.25,
   zoomDelta: 0.25,
+  doubleClickZoom: false,   // <-- add this line
 }).setView([1.3521,103.8198], 12);
+
 
 // Default OSM tiles, but with Retina + higher logical max zoom
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -449,6 +452,34 @@ L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
 }).addTo(mapleaf);
 
 mapgl.on('load', () => mapgl.on('click', (e) => { if (!e.originalEvent.defaultPrevented) closeActivePopup(); }));
+
+// Global polygon click: choose the smallest polygon at the click point
+mapgl.on('click', (e) => {
+  // Only check layers that still exist
+  const layers = ALL_FILL_LAYER_IDS.filter(id => mapgl.getLayer(id));
+  if (!layers.length) return;
+
+  // Get all polygons under the pointer
+  const hits = mapgl.queryRenderedFeatures(e.point, { layers });
+  const polys = hits.filter(f => {
+    const t = f.geometry && f.geometry.type;
+    return t === 'Polygon' || t === 'MultiPolygon';
+  });
+
+  if (!polys.length) return;
+
+  // Pick the smallest area (inner-most circle)
+  polys.sort((a, b) => turf.area(a) - turf.area(b));
+  const chosen = polys[0];
+
+  const content = buildPopupHTMLFromProps(chosen.properties);
+  showSinglePopup(null, e.lngLat, content);
+
+  e.originalEvent.preventDefault();
+  e.originalEvent.stopPropagation();
+});
+
+
 mapleaf.on('click', (e) => { if (!e.originalEvent.defaultPrevented) closeActivePopup(); });
 
 let engine='gl';
@@ -534,45 +565,103 @@ function bboxOfFeature(f){ let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-
 function panPopupIntoViewGL(lngLat,liftPx=220){ const p=mapgl.project(lngLat); p.y-=liftPx; const center=mapgl.unproject(p); mapgl.easeTo({center,duration:350}); }
 
 
+let leafletCircleTheme = 'on-gl'; // 'on-gl' (dark map) or 'on-osm' (light OSM tiles)
+
+function circleStyleForLeaflet(props){
+  // Flip stroke to dark on OSM so circles don’t scream on a light basemap
+  const onOSM = (leafletCircleTheme === 'on-osm');
+  const stroke = onOSM ? '#0b0d11' : (props._stroke || '#ffffff');
+  const fill   = props._fill || '#ffffff';
+
+  return {
+    color: stroke,
+    weight: (props._weight ?? 2),
+    opacity: (props._strokeOpacity ?? 0.7),
+    fillColor: fill,
+    // nudge opacity a touch higher on OSM to stay visible on light tiles
+    fillOpacity: onOSM ? Math.min(0.30, (props._fillOpacity ?? 0.18) + 0.08)
+                       : (props._fillOpacity ?? 0.18),
+    stroke: ((props._strokeOpacity ?? 0.2) > 0) && ((props._weight ?? 2) > 0)
+  };
+}
+
+function restyleAllLeafletPolys(){
+  layerList.forEach(entry => {
+    if (!entry.lfLayers) return;
+    for (const [fid, layers] of entry.lfLayers) {
+      const f = (entry.data?.features || []).find(x => String(x.properties?.fid) === String(fid));
+      if (!f) continue;
+      const t = f.geometry?.type || '';
+      layers.forEach(l => {
+        if (!l.setStyle) return;
+        if (t.includes('Polygon')) {
+          l.setStyle(circleStyleForLeaflet(f.properties));
+        } else if (t.includes('LineString')) {
+          l.setStyle(lineStyleForLeaflet(f.properties));
+        }
+      });
+    }
+  });
+}
+
+function pickSmallestPolygonAtPoint(point){
+  const layers = ALL_FILL_LAYER_IDS.filter(id => mapgl.getLayer(id));
+  if (!layers.length) return null;
+  const hits = mapgl.queryRenderedFeatures(point, { layers });
+  const polys = hits.filter(f => {
+    const t = f.geometry && f.geometry.type;
+    return t === 'Polygon' || t === 'MultiPolygon';
+  });
+  if (!polys.length) return null;
+  polys.sort((a,b) => turf.area(a) - turf.area(b));
+  return polys[0];
+}
+
+
 /* ================= POPUP MANAGEMENT SYSTEM ================= */
+
 let activePopup = null;
 let scrollLockEnabled = false;
 
+// NEW: scope wheel/touch blocking to the map containers only
+function inMap(target){
+  const m1 = document.getElementById('mapgl');
+  const m2 = document.getElementById('mapleaf');
+  return (m1 && m1.contains(target)) || (m2 && m2.contains(target));
+}
+function inPopupContent(target){
+  return !!(target.closest('.maplibregl-popup-content, .leaflet-popup-content, .leaflet-popup-content-wrapper'));
+}
+
+let _blocker = null;
 function enableScrollLock() {
   if (scrollLockEnabled) return;
   scrollLockEnabled = true;
-  
-  document.body.classList.add('q-body--prevent-scroll');
-  
-  // iOS viewport handling
-  if (window.visualViewport) {
-    const viewport = window.visualViewport;
-    const onViewportChange = () => {
-      document.body.style.height = `${viewport.height}px`;
-    };
-    viewport.addEventListener('resize', onViewportChange);
-    viewport.addEventListener('scroll', onViewportChange);
-    onViewportChange();
-  }
-  
-  // Block wheel/scroll events
-  const blockScroll = (e) => e.preventDefault();
-  document.addEventListener('wheel', blockScroll, { passive: false });
-  document.addEventListener('touchmove', blockScroll, { passive: false });
+
+  // do NOT add q-body--prevent-scroll or mess with body overflow anymore
+
+  _blocker = (e) => {
+    // If the event originated over the map, but not inside popup content,
+    // prevent default so the page doesn't jitter/zoom; sidebar stays scrollable.
+    if (inMap(e.target) && !inPopupContent(e.target)) {
+      e.preventDefault();
+    }
+  };
+  document.addEventListener('wheel', _blocker, { passive: false });
+  document.addEventListener('touchmove', _blocker, { passive: false });
 }
 
 function disableScrollLock() {
   if (!scrollLockEnabled) return;
   scrollLockEnabled = false;
-  
-  document.body.classList.remove('q-body--prevent-scroll');
-  document.body.style.height = '';
-  
-  // Remove event listeners
-  const blockScroll = (e) => e.preventDefault();
-  document.removeEventListener('wheel', blockScroll);
-  document.removeEventListener('touchmove', blockScroll);
+
+  if (_blocker) {
+    document.removeEventListener('wheel', _blocker);
+    document.removeEventListener('touchmove', _blocker);
+    _blocker = null;
+  }
 }
+
 
 function closeActivePopup() {
   if (activePopup) {
@@ -607,9 +696,9 @@ function showSinglePopup(popup, lngLat, content) {
   
   enableScrollLock();
   
-  // Auto-close popup after 10 seconds to prevent accumulation
+  const thisPopup = activePopup;
   setTimeout(() => {
-    if (activePopup === popup) closeActivePopup();
+    if (activePopup === thisPopup) closeActivePopup();
   }, 10000);
 }
 
@@ -714,7 +803,6 @@ function verifyLayerOnGL(entry) {
 
     if(clearIfExists){
       [lblId,iconId,polyEdgeId,lineId,fillId].forEach(id=>{ if(mapgl.getLayer(id)) try{mapgl.removeLayer(id);}catch{} });
-      if(mapgl.getSource(srcId)) try{mapgl.removeSource(srcId);}catch{}
     }
 
     if(mapgl.getSource(srcId)) mapgl.removeSource(srcId);
@@ -725,6 +813,8 @@ function verifyLayerOnGL(entry) {
     mapgl.addLayer({ id:fillId, type:'fill', source:srcId,
       filter:['all', notHidden, ['match', ['geometry-type'], ['Polygon','MultiPolygon'], true, false]],
       paint:{ 'fill-color':['coalesce',['get','_fill'],'#ffffff'], 'fill-opacity':['coalesce',['get','_fillOpacity'],0.2] } });
+ 
+    if (!ALL_FILL_LAYER_IDS.includes(fillId)) ALL_FILL_LAYER_IDS.push(fillId);
 
     mapgl.addLayer({ id:polyEdgeId, type:'line', source:srcId,
       filter:['all', notHidden, ['match', ['geometry-type'], ['Polygon','MultiPolygon'], true, false]],
@@ -743,17 +833,18 @@ function verifyLayerOnGL(entry) {
       layout:{ 'text-field':['coalesce',['get','_label'],''], 'text-font':['Noto Sans Regular'], 'text-size':11, 'text-offset':[0,1.1], 'text-anchor':'top' },
       paint:{ 'text-color':'#e5e7eb','text-halo-color':'#0b0d11','text-halo-width':1.2 } });
 
-    const POP=18;
-    [fillId,polyEdgeId,lineId,iconId,lblId].forEach(lid=>{
+    const POP = 18;
+
+    // Keep clicks working for POINT markers only (icons + labels)
+    [iconId, lblId].forEach(lid=>{
       mapgl.on('click', lid, (e)=>{
         if (!e.features || !e.features.length) return;
         const feature = e.features[0];
         if (!feature || !feature.properties) return;
-    
+
         const content = buildPopupHTMLFromProps(feature.properties);
         showSinglePopup(null, e.lngLat, content);
-    
-        // Stop event propagation to prevent multiple popups
+
         e.originalEvent.stopPropagation();
       });
     });
@@ -769,56 +860,147 @@ function verifyLayerOnGL(entry) {
 function refreshGroupGL(entry){ const src=mapgl.getSource(entry.glSourceId); if(src) src.setData(filteredFeatureCollection(entry)); }
 
 /* ================= Leaflet overlay ================= */
-function dollarDataUrl(size=32){ return 'data:image/svg+xml;charset=UTF-8,'+encodeURIComponent(dollarSvg(size)); }
-function leafletIconFor(url,size=32){ return L.icon({iconUrl:url||dollarDataUrl(size),iconSize:[size,size],iconAnchor:[size/2,size-2],popupAnchor:[0,-size/2]}); }
-function createGroupOnLeaflet(entry,rebuild=false){
-  if(rebuild && entry.lfGroup){ try{entry.lfGroup.remove();}catch{} }
-  entry.lfGroup=L.layerGroup().addTo(mapleaf);
-  entry.lfLayers=new Map();
 
-  filteredFeatureCollection(entry).features.forEach(f=>{
-    const fid=f.properties.fid, list=[];
-    const strokeOn = (f.properties._strokeOpacity ?? 0.2) > 0 && (f.properties._weight ?? 2) > 0;
-    const polyStyle={ color:f.properties._stroke||'#ffffff', weight:f.properties._weight||2, opacity:f.properties._strokeOpacity ?? 0.2, fillColor:f.properties._fill||'#ffffff', fillOpacity:f.properties._fillOpacity ?? 0.2, stroke: strokeOn };
-    const lineStyle={ color:f.properties._stroke||'#ffffff', weight:f.properties._weight||2, opacity:f.properties._strokeOpacity ?? 0.2 };
+/** Theme flag used only for Leaflet vector styling.
+ *  Set to 'on-osm' when you switch to OpenStreetMap raster.
+ *  Set to 'on-gl' when you’re on MapLibre styles.
 
-    if(f.geometry.type==='Point'){
-      const [lng,lat]=f.geometry.coordinates;
-      const icon=leafletIconFor(f.properties._iconUrl || nameToUrl.get(f.properties._icon),32);
-      const m=L.marker([lat,lng],{icon});
-  
-      m.on('click', () => {
+function dollarDataUrl(size = 32) {
+  return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(dollarSvg(size));
+}
+function leafletIconFor(url, size = 32) {
+  return L.icon({
+    iconUrl: url || dollarDataUrl(size),
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size - 2],
+    popupAnchor: [0, -size / 2]
+  });
+}
+
+/** Theme-aware polygon/area style just for Leaflet */
+function circleStyleForLeaflet(props = {}) {
+  const onOSM = (leafletCircleTheme === 'on-osm');
+  const stroke = onOSM ? '#0b0d11' : (props._stroke || '#ffffff'); // darker stroke on OSM
+  const fill   = props._fill || '#ffffff';
+
+  // slightly stronger fill on OSM so it reads on the light basemap
+  const baseFillOp = (props._fillOpacity ?? 0.18);
+  const fillOpacity = onOSM ? Math.min(0.30, baseFillOp + 0.08) : baseFillOp;
+
+  const strokeOpacity = (props._strokeOpacity ?? 0.7);
+  const weight        = (props._weight ?? 2);
+  const strokeOn      = (strokeOpacity > 0) && (weight > 0);
+
+  return {
+    color: stroke,
+    weight,
+    opacity: strokeOpacity,
+    fillColor: fill,
+    fillOpacity,
+    stroke: strokeOn
+  };
+}
+
+/** Simple line style (theme doesn’t matter much for lines here) */
+function lineStyleForLeaflet(props = {}) {
+  return {
+    color: props._stroke || '#ffffff',
+    weight: props._weight || 2,
+    opacity: props._strokeOpacity ?? 0.2
+  };
+}
+
+function createGroupOnLeaflet(entry, rebuild = false) {
+  if (rebuild && entry.lfGroup) {
+    try { entry.lfGroup.remove(); } catch {}
+  }
+  entry.lfGroup = L.layerGroup().addTo(mapleaf);
+  entry.lfLayers = new Map();
+
+  filteredFeatureCollection(entry).features.forEach(f => {
+    const fid  = f.properties.fid;
+    const list = [];
+
+    if (f.geometry.type === 'Point') {
+      const [lng, lat] = f.geometry.coordinates;
+      const icon = leafletIconFor(f.properties._iconUrl || nameToUrl.get(f.properties._icon), 32);
+      const m = L.marker([lat, lng], { icon, bubblingMouseEvents: false });
+
+      function openMarkerPopup(ev) {
+        if (ev?.originalEvent) {
+          ev.originalEvent.preventDefault();
+          ev.originalEvent.stopPropagation();
+        }
+        L.DomEvent.stop(ev);
+
         closeActivePopup();
-        activePopup = m.bindPopup(buildPopupHTMLFromProps(f.properties),{autoPan:true,offset:[0,-18]}).openPopup();
+        m.bindPopup(
+          buildPopupHTMLFromProps(f.properties),
+          { autoPan: true, offset: [0, -18] }
+        ).openPopup();
+        activePopup = m.getPopup();
+
         enableScrollLock();
-      });
-  
-      if(!f.properties.hidden) m.addTo(entry.lfGroup); list.push(m);
-    }else{
-      const gj=L.geoJSON(f,{ style: geom=> (geom.type.includes('Polygon')?polyStyle:lineStyle) });
-  
-      gj.on('click', () => {
-        closeActivePopup();
-        activePopup = gj.bindPopup(buildPopupHTMLFromProps(f.properties),{autoPan:true,offset:[0,-18]}).openPopup();
-        enableScrollLock();
+      }
+
+      m.on('click', openMarkerPopup);
+      m.on('dblclick', openMarkerPopup);
+
+      if (!f.properties.hidden) m.addTo(entry.lfGroup);
+      list.push(m);
+    } else {
+      const gj = L.geoJSON(f, {
+        style: geom => (
+          geom.type.includes('Polygon')
+            ? circleStyleForLeaflet(f.properties)   // theme-aware polygon style
+            : lineStyleForLeaflet(f.properties)     // lines
+        ),
+        bubblingMouseEvents: false
       });
 
-      gj.on('mousedown', (ev)=> attachLongPressLeaf(ev, entry, fid));
-      gj.on('touchstart', (ev)=> attachLongPressLeaf(ev, entry, fid));
-  
-      if(!f.properties.hidden) gj.addTo(entry.lfGroup);
+      function openGeomPopup(ev) {
+        if (ev?.originalEvent) {
+          ev.originalEvent.preventDefault();
+          ev.originalEvent.stopPropagation();
+        }
+        L.DomEvent.stop(ev);
+
+        closeActivePopup();
+        gj.bindPopup(
+          buildPopupHTMLFromProps(f.properties),
+          { autoPan: true, offset: [0, -18] }
+        ).openPopup();
+        activePopup = gj.getPopup();
+
+        enableScrollLock();
+      }
+
+      gj.on('click', openGeomPopup);
+      gj.on('dblclick', openGeomPopup);
+
+      // Long-press style editor hook (polygons/lines)
+      gj.on('mousedown', (ev) => attachLongPressLeaf(ev, entry, fid));
+      gj.on('touchstart', (ev) => attachLongPressLeaf(ev, entry, fid));
+
+      if (!f.properties.hidden) gj.addTo(entry.lfGroup);
       list.push(gj);
     }
+
     entry.lfLayers.set(fid, list);
   });
 
   // Respect current visibility on Leaflet too
   applyVisibility(entry);
 }
-function refreshGroupBoth(entry){
+
+function refreshGroupBoth(entry) {
   refreshGroupGL(entry);
-  if(entry.lfGroup){ try{ entry.lfGroup.clearLayers(); }catch{} createGroupOnLeaflet(entry, true); }
+  if (entry.lfGroup) {
+    try { entry.lfGroup.clearLayers(); } catch {}
+    createGroupOnLeaflet(entry, true);
+  }
 }
+
 
 /* ================= UI ================= */
 
@@ -1226,16 +1408,27 @@ sidebarEl.addEventListener('transitionend',e=>{ if(e.propertyName==='width'){ if
 
 /* ===== Basemap switching ===== */
 document.getElementById('basemap').addEventListener('change', (e)=>{
-  const val=e.target.value;
-  if(val==='osm'){ showLeaf(); }
-  else {
-    if(val==='custom') mapgl.setStyle(CUSTOM_STYLE);
-    else if(val==='streets') mapgl.setStyle(maptilersdk.MapStyle.STREETS);
-    else if(val==='dark') mapgl.setStyle(maptilersdk.MapStyle.DARK);
-    else if(val==='outdoor') mapgl.setStyle(maptilersdk.MapStyle.OUTDOOR);
-    else if(val==='satellite') mapgl.setStyle(maptilersdk.MapStyle.SATELLITE);
-    readdAllGroupsAfterGLStyleChange(); showGL();
+  const val = e.target.value;
+
+  if (val === 'osm') {
+    // Switch to Leaflet/OSM
+    leafletCircleTheme = 'on-osm';
+    showLeaf();
+    restyleAllLeafletPolys();   // repaint existing polygons for OSM theme
+  } else {
+    // Switch back to GL styles
+    leafletCircleTheme = 'on-gl';
+
+    if (val === 'custom') mapgl.setStyle(CUSTOM_STYLE);
+    else if (val === 'streets') mapgl.setStyle(maptilersdk.MapStyle.STREETS);
+    else if (val === 'dark') mapgl.setStyle(maptilersdk.MapStyle.DARK);
+    else if (val === 'outdoor') mapgl.setStyle(maptilersdk.MapStyle.OUTDOOR);
+    else if (val === 'satellite') mapgl.setStyle(maptilersdk.MapStyle.SATELLITE);
+
+    readdAllGroupsAfterGLStyleChange();
+    showGL();
   }
+
   closeStyleEditor();
 });
 
@@ -1359,22 +1552,33 @@ seDelete.addEventListener('click', ()=>{
   closeStyleEditor();
 });
 
-const LONGPRESS_MS = 500;
-function attachLongPressGL(layerId, entry){
-  let t=null;
-  function clear(){ if(t){ clearTimeout(t); t=null; } }
+const LONGPRESS_MS = 400;
+function attachLongPressGL(layerId, /*unused*/ _entry){
+  let timer = null;
+
+  function clear(){ if (timer){ clearTimeout(timer); timer = null; } }
+
   function start(e){
-    if(!editingEnabled) return;
-    const feat=e.features && e.features[0]; if(!feat) return;
-    const type=feat.geometry && feat.geometry.type;
-    if(type!=='Polygon' && type!=='MultiPolygon') return;
-    const fid=feat.properties && feat.properties.fid;
-    const pt=e.point||{x:0,y:0};
-    t=setTimeout(()=>{ openStyleEditor(entry,fid, pt.x, pt.y); }, LONGPRESS_MS);
+    if (!editingEnabled) return;
+
+    timer = setTimeout(() => {
+      const chosen = pickSmallestPolygonAtPoint(e.point);
+      if (!chosen) return;
+
+      // Find the owning entry from the feature's source id
+      const srcId = chosen.layer && chosen.layer.source;
+      const owner = layerList.find(l => l.glSourceId === srcId);
+      const fid   = chosen.properties && chosen.properties.fid;
+      const pt    = e.point || { x:0, y:0 };
+
+      if (owner && fid) openStyleEditor(owner, String(fid), pt.x, pt.y);
+    }, LONGPRESS_MS);
   }
-  ['mousedown','touchstart'].forEach(ev=> mapgl.on(ev, layerId, start));
-  ['mouseup','mouseleave','drag','move','touchend','touchcancel'].forEach(ev=> mapgl.on(ev, clear));
+
+  ['mousedown','touchstart'].forEach(ev => mapgl.on(ev, layerId, start));
+  ['mouseup','mouseleave','drag','move','touchend','touchcancel'].forEach(ev => mapgl.on(ev, clear));
 }
+
 function attachLongPressLeaf(ev, entry, fid){
   if(!editingEnabled) return;
   let timer=null;
@@ -1751,20 +1955,23 @@ document.getElementById('server-continue').addEventListener('click', ()=>{
   try{ const raw=localStorage.getItem(LS_KEY); if(raw) applyStateArray(JSON.parse(raw)); }catch{}
 });
 
-/* ====================== AUDIO + SFX ====================== */
+/* ====================== AUDIO + SFX (robust tab switching) ====================== */
 let audioEnabled = true;
 
-// === BGM setup ===
+/* --- BGM setup --- */
 const BGM_CAP = 0.10;
 let userBgmSetting = 1;
 const bgmTargetVolume = () => BGM_CAP * userBgmSetting;
 
 const bgm = new Audio('Evening Traveler - Road Trip.mp3');
-bgm.volume = Math.min(bgmTargetVolume(), 1);
 bgm.loop = true;
+bgm.volume = Math.min(bgmTargetVolume(), 1);
 
-// Fade helper
-const fadeAudio = (a, to = 0, ms = 400) => new Promise(res => {
+let audioCtx = null, buttonBuffer = null;
+const btnFallbackAudio = new Audio('button.mp3'); btnFallbackAudio.preload = 'auto';
+const sonarSfx = new Audio('scanning.mp3');
+
+const fadeAudio = (a, to = 0, ms = 300) => new Promise(res => {
   const from = a.volume || 0, t0 = performance.now();
   const step = t => {
     const k = Math.min(1, (t - t0) / ms);
@@ -1774,65 +1981,132 @@ const fadeAudio = (a, to = 0, ms = 400) => new Promise(res => {
   requestAnimationFrame(step);
 });
 
-// Stop helpers
-const stopHtmlAudio = a => { try { a.pause(); a.currentTime = 0; } catch {} };
+const stopHtmlAudio = a => { try { a.pause(); } catch {} };
 const stopAllSfx = () => document.querySelectorAll('audio').forEach(el => { if (el !== bgm) stopHtmlAudio(el); });
-const suspendWebAudio = async () => { try { if (audioCtx?.state !== 'suspended') await audioCtx.suspend(); } catch {} };
-const resumeWebAudio  = async () => { try { if (audioCtx?.state === 'suspended') await audioCtx.resume(); } catch {} };
 
-// Handle tab visibility
-document.addEventListener('visibilitychange', async () => {
-  if (document.hidden) {
-    await fadeAudio(bgm, 0, 350); stopHtmlAudio(bgm); stopAllSfx(); await suspendWebAudio();
-    try { if ('mediaSession' in navigator) { navigator.mediaSession.playbackState='none'; navigator.mediaSession.metadata=null; } } catch {}
-  } else {
-    await resumeWebAudio();
-    if (audioEnabled) { try { bgm.volume=0; bgm.loop=true; await bgm.play(); await fadeAudio(bgm, bgmTargetVolume(), 350); } catch {} }
-  }
-});
+const ensureAudioCtx = () => (audioCtx ||= new (window.AudioContext || window.webkitAudioContext)());
+const suspendWebAudio = async () => { try { if (audioCtx && audioCtx.state !== 'suspended') await audioCtx.suspend(); } catch {} };
+const resumeWebAudio  = async () => { try { if (audioCtx && audioCtx.state === 'suspended') await audioCtx.resume(); } catch {} };
 
-// Start audio after user click (required by browsers)
-document.addEventListener("pointerdown", () => { bgm.play().catch(()=>{}); }, { once:true, capture:true });
-
-
-let audioCtx = null, buttonBuffer = null;
-const btnFallbackAudio = new Audio('button.mp3'); btnFallbackAudio.preload = 'auto';
-
-(async ()=>{
-  try{
-    const res = await fetch('button.mp3', { cache:'force-cache' });
-    const ab = await res.arrayBuffer();
-    audioCtx = audioCtx || new (window.AudioContext||window.webkitAudioContext)();
+/* --- Preload click buffer (WebAudio) --- */
+(async () => {
+  try {
+    const res = await fetch('button.mp3', { cache: 'force-cache' });
+    const ab  = await res.arrayBuffer();
+    const ctx = ensureAudioCtx();
+    // Safari needs callback form sometimes
     try {
-      buttonBuffer = await new Promise((resolve,reject)=>{
-        const p = audioCtx.decodeAudioData(ab.slice(0), resolve, reject);
-        if (p && typeof p.then === 'function') p.then(resolve).catch(reject);
+      buttonBuffer = await new Promise((resolve, reject) => {
+        const p = ctx.decodeAudioData(ab.slice(0), resolve, reject);
+        if (p && p.then) p.then(resolve).catch(reject);
       });
     } catch {
-      audioCtx.decodeAudioData(ab.slice(0), buf=>buttonBuffer=buf, ()=>{});
+      ctx.decodeAudioData(ab.slice(0), buf => buttonBuffer = buf, () => {});
     }
-  }catch(e){ console.warn('button.mp3 preload failed', e); }
+  } catch (e) {
+    console.warn('button.mp3 preload failed', e);
+  }
 })();
 
-function ensureAudioCtxResumed(){ try{ if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); }catch{} }
+/* --- SFX click --- */
 function playClick(){
   try{
-    if(!audioEnabled) return;
-    ensureAudioCtxResumed();
-    if(buttonBuffer && audioCtx){
-      const src = audioCtx.createBufferSource(); src.buffer = buttonBuffer; src.connect(audioCtx.destination); src.start(0);
-    }else{
+    if(!audioEnabled || document.hidden) return;
+    const ctx = ensureAudioCtx();
+    if (ctx.state === 'suspended') ctx.resume().catch(()=>{});
+    if (buttonBuffer){
+      const src = ctx.createBufferSource();
+      src.buffer = buttonBuffer;
+      src.connect(ctx.destination);
+      src.start(0);
+    } else {
       btnFallbackAudio.currentTime = 0;
       btnFallbackAudio.play().catch(()=>{});
     }
-  }catch(e){}
+  }catch{}
 }
-document.addEventListener('pointerdown', ()=>{
-  ensureAudioCtxResumed();
-  if(audioEnabled && !document.hidden){ bgm.play().catch(()=>{}); }
-  playClick();
-},{once:true,capture:true});
 
+/* --- Media session niceties (optional) --- */
+function clearMediaSession(){
+  try {
+    if ('mediaSession' in navigator) {
+      navigator.mediaSession.playbackState = 'none';
+      navigator.mediaSession.metadata = null;
+    }
+  } catch {}
+}
+function setMediaSessionPlaying(){
+  try {
+    if ('mediaSession' in navigator) {
+      navigator.mediaSession.playbackState = 'playing';
+      // (optional) set metadata here if you want
+    }
+  } catch {}
+}
+
+/* --- Visibility lifecycle --- */
+let bgmWasPlaying = false;      // remember state across tab switches
+let suppressNextResume = false; // prevent double-resume when multiple events fire
+
+async function handleHidden(){
+  suppressNextResume = false;
+  bgmWasPlaying = audioEnabled && !bgm.paused;
+  try { await fadeAudio(bgm, 0, 200); } catch {}
+  stopHtmlAudio(bgm);
+  stopAllSfx();
+  clearMediaSession();
+  await suspendWebAudio();
+}
+
+function safePlayBgm(){
+  if (!audioEnabled || document.hidden) return;
+
+  const tryPlay = () => {
+    bgm.volume = 0;
+    bgm.loop   = true;
+    return bgm.play()
+      .then(() => fadeAudio(bgm, bgmTargetVolume(), 250).then(setMediaSessionPlaying))
+      .catch(() => {
+        // Autoplay blocked: wait for next user gesture
+        const onceResume = () => {
+          document.removeEventListener('pointerdown', onceResume, true);
+          safePlayBgm();
+        };
+        document.addEventListener('pointerdown', onceResume, true);
+      });
+  };
+
+  // Some browsers need the AudioContext resumed first
+  resumeWebAudio().then(tryPlay).catch(tryPlay);
+}
+
+function handleVisible(){
+  if (suppressNextResume) return;
+  // If user had music on before, resume; otherwise stay silent
+  if (bgmWasPlaying) safePlayBgm();
+}
+
+/* Cover the full matrix of tab/app lifecycle events */
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) handleHidden();
+  else handleVisible();
+});
+window.addEventListener('pagehide', handleHidden, { capture:true });
+window.addEventListener('freeze',   handleHidden, { capture:true });
+window.addEventListener('blur',     handleHidden, { capture:true });
+
+window.addEventListener('pageshow', () => { suppressNextResume = false; handleVisible(); }, { capture:true });
+window.addEventListener('focus',    () => { suppressNextResume = false; handleVisible(); }, { capture:true });
+
+/* --- Unlock audio on first user gesture --- */
+document.addEventListener('pointerdown', () => {
+  if (document.hidden) return;
+  resumeWebAudio().catch(()=>{});
+  if (audioEnabled) safePlayBgm();
+  playClick();
+}, { once:true, capture:true });
+
+/* --- Audio toggle button wiring --- */
 const audioBtn = document.getElementById('audio-toggle');
 function setAudioIcon(on){
   audioBtn.innerHTML = on
@@ -1840,14 +2114,32 @@ function setAudioIcon(on){
     : `<svg viewBox="0 0 24 24" fill="none" stroke="#e5e7eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="1" x2="1" y2="23"></line></svg>`;
 }
 setAudioIcon(true);
+
 audioBtn.addEventListener('click', ()=>{
   audioEnabled = !audioEnabled;
   setAudioIcon(audioEnabled);
-  if(!audioEnabled) bgm.pause(); else if(!document.hidden) bgm.play().catch(()=>{});
+  if (!audioEnabled) {
+    bgmWasPlaying = false;
+    stopHtmlAudio(bgm);
+    clearMediaSession();
+  } else if (!document.hidden) {
+    bgmWasPlaying = true;
+    safePlayBgm();
+  }
 });
-document.addEventListener('click', (ev)=>{ if(ev.target.closest('button')) playClick(); }, {capture:true});
 
-const sonarSfx = new Audio('scanning.mp3');
+/* Play click for all buttons (but not while hidden) */
+document.addEventListener('click', (ev) => {
+  if (document.hidden) return;
+  if (ev.target.closest('button')) playClick();
+}, { capture:true });
+
+/* Optional: throttle sonar sfx while hidden */
+function playSonar(){
+  if (!audioEnabled || document.hidden) return;
+  try { sonarSfx.currentTime = 0; sonarSfx.play(); } catch {}
+}
+
 
 /* ====================== GPS CONTROLS ====================== */
 let geolocate = null;
