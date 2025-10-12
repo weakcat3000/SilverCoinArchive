@@ -1955,21 +1955,22 @@ document.getElementById('server-continue').addEventListener('click', ()=>{
   try{ const raw=localStorage.getItem(LS_KEY); if(raw) applyStateArray(JSON.parse(raw)); }catch{}
 });
 
-/* ====================== AUDIO + SFX (REWRITTEN, STABLE) ====================== */
 /* ====================== AUDIO + SFX ====================== */
+/* ====================== AUDIO + SFX (stable) ====================== */
 let audioEnabled = true;
 
-// === BGM setup ===
-const BGM_CAP = 0.10;
-let userBgmSetting = 1;
+/* --- BGM setup --- */
+const BGM_CAP = 0.10;                   // master cap
+let userBgmSetting = 1;                 // 0..1 user pref if you add a slider later
 const bgmTargetVolume = () => BGM_CAP * userBgmSetting;
 
 const bgm = new Audio('Evening Traveler - Road Trip.mp3');
-bgm.volume = Math.min(bgmTargetVolume(), 1);
+bgm.preload = 'auto';
 bgm.loop = true;
+bgm.volume = Math.min(bgmTargetVolume(), 1);
 
-// Fade helper
-const fadeAudio = (a, to = 0, ms = 400) => new Promise(res => {
+/* --- Helpers --- */
+const fadeAudio = (a, to = 0, ms = 350) => new Promise(res => {
   const from = a.volume || 0, t0 = performance.now();
   const step = t => {
     const k = Math.min(1, (t - t0) / ms);
@@ -1979,65 +1980,143 @@ const fadeAudio = (a, to = 0, ms = 400) => new Promise(res => {
   requestAnimationFrame(step);
 });
 
-// Stop helpers
-const stopHtmlAudio = a => { try { a.pause(); a.currentTime = 0; } catch {} };
-const stopAllSfx = () => document.querySelectorAll('audio').forEach(el => { if (el !== bgm) stopHtmlAudio(el); });
-const suspendWebAudio = async () => { try { if (audioCtx?.state !== 'suspended') await audioCtx.suspend(); } catch {} };
-const resumeWebAudio  = async () => { try { if (audioCtx?.state === 'suspended') await audioCtx.resume(); } catch {} };
+const stopHtmlAudio = a => { try { a.pause(); } catch {} }; // don't reset currentTime for bgm
+const stopAllSfx = () => document.querySelectorAll('audio')
+  .forEach(el => { if (el !== bgm) stopHtmlAudio(el); });
 
-// Handle tab visibility
-document.addEventListener('visibilitychange', async () => {
-  if (document.hidden) {
-    await fadeAudio(bgm, 0, 350); stopHtmlAudio(bgm); stopAllSfx(); await suspendWebAudio();
-    try { if ('mediaSession' in navigator) { navigator.mediaSession.playbackState='none'; navigator.mediaSession.metadata=null; } } catch {}
-  } else {
-    await resumeWebAudio();
-    if (audioEnabled) { try { bgm.volume=0; bgm.loop=true; await bgm.play(); await fadeAudio(bgm, bgmTargetVolume(), 350); } catch {} }
-  }
-});
+let audioCtx = null;
+let buttonBuffer = null;
+const ensureCtx = () => (audioCtx ||= new (window.AudioContext || window.webkitAudioContext)());
+const resumeWebAudio = async () => { try { if (audioCtx && audioCtx.state === 'suspended') await audioCtx.resume(); } catch {} };
+const suspendWebAudio = async () => { try { if (audioCtx && audioCtx.state !== 'suspended') await audioCtx.suspend(); } catch {} };
 
-// Start audio after user click (required by browsers)
-document.addEventListener("pointerdown", () => { bgm.play().catch(()=>{}); }, { once:true, capture:true });
+/* --- Preload Click SFX (WebAudio) + fallback --- */
+const btnFallbackAudio = new Audio('button.mp3');
+btnFallbackAudio.preload = 'auto';
 
-
-let audioCtx = null, buttonBuffer = null;
-const btnFallbackAudio = new Audio('button.mp3'); btnFallbackAudio.preload = 'auto';
-
-(async ()=>{
-  try{
-    const res = await fetch('button.mp3', { cache:'force-cache' });
-    const ab = await res.arrayBuffer();
-    audioCtx = audioCtx || new (window.AudioContext||window.webkitAudioContext)();
+(async () => {
+  try {
+    const res = await fetch('button.mp3', { cache: 'force-cache' });
+    const ab  = await res.arrayBuffer();
+    const ctx = ensureCtx();
+    // Safari: use callback form as backup
     try {
-      buttonBuffer = await new Promise((resolve,reject)=>{
-        const p = audioCtx.decodeAudioData(ab.slice(0), resolve, reject);
-        if (p && typeof p.then === 'function') p.then(resolve).catch(reject);
+      buttonBuffer = await new Promise((resolve, reject) => {
+        const p = ctx.decodeAudioData(ab.slice(0), resolve, reject);
+        if (p && p.then) p.then(resolve).catch(reject);
       });
     } catch {
-      audioCtx.decodeAudioData(ab.slice(0), buf=>buttonBuffer=buf, ()=>{});
+      ctx.decodeAudioData(ab.slice(0), buf => buttonBuffer = buf, () => {});
     }
-  }catch(e){ console.warn('button.mp3 preload failed', e); }
+  } catch (e) {
+    console.warn('button.mp3 preload failed', e);
+  }
 })();
 
-function ensureAudioCtxResumed(){ try{ if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); }catch{} }
+/* --- Click SFX --- */
 function playClick(){
   try{
-    if(!audioEnabled) return;
-    ensureAudioCtxResumed();
-    if(buttonBuffer && audioCtx){
-      const src = audioCtx.createBufferSource(); src.buffer = buttonBuffer; src.connect(audioCtx.destination); src.start(0);
-    }else{
+    if (!audioEnabled || document.hidden) return;
+    const ctx = ensureCtx();
+    if (ctx.state === 'suspended') ctx.resume().catch(()=>{});
+    if (buttonBuffer){
+      const src = ctx.createBufferSource();
+      src.buffer = buttonBuffer;
+      src.connect(ctx.destination);
+      src.start(0);
+    } else {
       btnFallbackAudio.currentTime = 0;
       btnFallbackAudio.play().catch(()=>{});
     }
-  }catch(e){}
+  }catch{}
 }
-document.addEventListener('pointerdown', ()=>{
-  ensureAudioCtxResumed();
-  if(audioEnabled && !document.hidden){ bgm.play().catch(()=>{}); }
-  playClick();
-},{once:true,capture:true});
 
+/* --- Optional: Sonar SFX helper (uses your sonar-sound.mp3) --- */
+const sonarSfx = new Audio('sonar-sound.mp3');
+sonarSfx.preload = 'auto';
+function playSonar(){
+  if (!audioEnabled || document.hidden) return;
+  try { sonarSfx.currentTime = 0; sonarSfx.play().catch(()=>{}); } catch {}
+}
+
+/* --- Media Session niceties (optional) --- */
+function clearMediaSession(){
+  try {
+    if ('mediaSession' in navigator) {
+      navigator.mediaSession.playbackState = 'none';
+      navigator.mediaSession.metadata = null;
+    }
+  } catch {}
+}
+function setMediaSessionPlaying(){
+  try {
+    if ('mediaSession' in navigator) {
+      navigator.mediaSession.playbackState = 'playing';
+    }
+  } catch {}
+}
+
+/* --- Visibility / lifecycle --- */
+let bgmWasPlaying = false;      // remember if we should resume when visible again
+
+async function handleHidden(){
+  bgmWasPlaying = audioEnabled && !bgm.paused;
+  try { await fadeAudio(bgm, 0, 200); } catch {}
+  stopHtmlAudio(bgm);
+  stopAllSfx();
+  clearMediaSession();
+  await suspendWebAudio();
+}
+async function handleVisible(){
+  if (!audioEnabled || document.hidden) return;
+  await resumeWebAudio();
+  if (bgmWasPlaying) {
+    try {
+      bgm.volume = 0;
+      bgm.loop = true;
+      await bgm.play();
+      await fadeAudio(bgm, bgmTargetVolume(), 250);
+      setMediaSessionPlaying();
+    } catch {}
+  }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) handleHidden();
+  else handleVisible();
+});
+window.addEventListener('pagehide', handleHidden, { capture:true });
+window.addEventListener('freeze',   handleHidden, { capture:true });
+window.addEventListener('blur',     handleHidden, { capture:true });
+window.addEventListener('pageshow', handleVisible, { capture:true });
+window.addEventListener('focus',    handleVisible, { capture:true });
+
+/* --- First user gesture: unlock audio cleanly (single handler) --- */
+document.addEventListener('pointerdown', async (ev) => {
+  if (document.hidden) return;
+
+  // Resume WebAudio & start bgm if enabled
+  await resumeWebAudio();
+  if (audioEnabled && bgm.paused) {
+    try {
+      bgm.volume = bgm.volume || 0; // keep current
+      await bgm.play();
+      setMediaSessionPlaying();
+    } catch {}
+  }
+
+  // Only play tap sound if the gesture was on a button
+  if (ev.target && ev.target.closest('button')) {
+    playClick();
+  }
+}, { once: true, capture: true });
+
+/* --- Global button click SFX (post-unlock) --- */
+document.addEventListener('click', (ev) => {
+  if (ev.target && ev.target.closest('button')) playClick();
+}, { capture: true });
+
+/* --- Audio toggle button wiring --- */
 const audioBtn = document.getElementById('audio-toggle');
 function setAudioIcon(on){
   audioBtn.innerHTML = on
@@ -2045,14 +2124,34 @@ function setAudioIcon(on){
     : `<svg viewBox="0 0 24 24" fill="none" stroke="#e5e7eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="1" x2="1" y2="23"></line></svg>`;
 }
 setAudioIcon(true);
-audioBtn.addEventListener('click', ()=>{
+
+audioBtn.addEventListener('click', async ()=>{
   audioEnabled = !audioEnabled;
   setAudioIcon(audioEnabled);
-  if(!audioEnabled) bgm.pause(); else if(!document.hidden) bgm.play().catch(()=>{});
-});
-document.addEventListener('click', (ev)=>{ if(ev.target.closest('button')) playClick(); }, {capture:true});
 
-const sonarSfx = new Audio('scanning.mp3');
+  if (!audioEnabled) {
+    // hard mute
+    stopAllSfx();
+    bgm.pause();
+    clearMediaSession();
+  } else if (!document.hidden) {
+    // soft resume
+    await resumeWebAudio();
+    try {
+      if (bgm.paused) {
+        bgm.volume = 0;
+        bgm.loop = true;
+        await bgm.play();
+        await fadeAudio(bgm, bgmTargetVolume(), 200);
+        setMediaSessionPlaying();
+      }
+    } catch {}
+  }
+});
+
+/* === (optional) expose playSonar globally if other code calls it === */
+window.playSonar = playSonar;
+
 
 /* ====================== GPS CONTROLS ====================== */
 let geolocate = null;
