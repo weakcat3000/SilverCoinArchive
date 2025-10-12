@@ -125,12 +125,91 @@ a{color:var(--accent)}
 .modal .err{color:#f87171;font-weight:700;margin-top:6px;display:none}
 .app.blocked-by-modal{pointer-events:none}
 .modal,.modal *{pointer-events:auto}
+/* Pixel Grid tweaks */
+#pg-bulk{white-space:pre-wrap}
+.pg-canvas-wrap::-webkit-scrollbar{height:8px;width:8px}
+.pg-canvas-wrap{scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+
 /* Draw panel */
 .draw-grid{display:grid;grid-template-columns:1fr auto;gap:8px}
 .draw-grid #draw-coord{grid-column:1/-1}
+/* === Pixel Grid modal sizing / containment === */
+.pg-modal-card{
+  max-width:1170px;   /* ~30% larger than 900px */
+  width:96%;
+  overflow:hidden;    /* keep everything clipped inside the card */
+}
+
+
+/* ===== Pixel Grid: bigger canvas, tighter controls ===== */
+#pixelgrid-modal .pg-modal-card{
+  max-width: 1400px;
+  width: 98%;
+  max-height: 92vh;               /* taller modal */
+  display: grid;
+  grid-auto-rows: auto 1fr auto;  /* header / controls / footer */
+  overflow: hidden;
+}
+
+#pixelgrid-modal .pg-controls{
+  grid-template-columns: 360px 1fr !important; /* narrow control rail + big canvas */
+  gap: 12px;
+  align-items: start;
+}
+
+/* compact the left rail */
+#pixelgrid-modal .pg-left{ gap: 6px; }
+#pixelgrid-modal .pg-row{ gap: 6px; }
+#pixelgrid-modal .pg-photo{ gap: 6px; }
+#pixelgrid-modal .pg-row input,
+#pixelgrid-modal .pg-photo input,
+#pixelgrid-modal #pg-bulk,
+#pixelgrid-modal .btn.small{
+  font-size: 12px;
+  padding: 6px 8px;
+}
+
+/* shorter bulk box */
+#pixelgrid-modal #pg-bulk{ min-height: 60px; }
+
+/* canvas gets more space */
+#pixelgrid-modal .pg-right{ align-content: start; }
+#pixelgrid-modal .pg-canvas-wrap{
+  max-height: 78vh;  /* was ~70vh */
+  max-width: 80vw;   /* was ~70vw */
+}
+
+#pixelgrid-modal .pg-right small.hint{ margin-top: -2px; }
+
+
+/* canvas scroller: bigger view but contained */
+.pg-canvas-wrap{
+  border:1px solid var(--border);
+  border-radius:8px;
+  overflow:auto;      /* <- prevents peek-out when zoomed */
+  max-height:70vh;    /* was 55vh */
+  max-width:70vw;     /* was 55vw */
+  background:#111;
+}
 /* Sonar */
 .sonar-btn{position:fixed;right:16px;bottom:16px;z-index:1500;width:64px;height:64px;border-radius:12px;background:#0e1420;border:1px solid var(--border);box-shadow:0 8px 24px rgba(0,0,0,.35);background-image:url('metal-sonar.png');background-size:contain;background-repeat:no-repeat;background-position:center;cursor:pointer}
 .sheets-btn{position:fixed;left:calc(var(--side) + 16px);bottom:16px;z-index:900;width:56px;height:56px;border-radius:12px;background:#0e1420;border:1px solid var(--border);box-shadow:0 8px 24px rgba(0,0,0,.35);cursor:pointer;display:grid;place-items:center;transition:left .28s ease}
+/* Floating Pixel Grid button (stacked above Sheets) */
+#pixelgrid-fab{
+  position:fixed;
+  left:calc(var(--side) + 16px);   /* align with Sheets */
+  bottom:calc(16px + 56px + 12px); /* sit above Sheets (56px height + 12px gap) */
+  z-index:950;                     /* above Sheets’ 900 */
+  width:56px;height:56px;border-radius:12px;
+  background:#0e1420;border:1px solid var(--border);
+  box-shadow:0 8px 24px rgba(0,0,0,.35);
+  cursor:pointer;display:grid;place-items:center;
+  transition:left .28s ease;
+}
+.app.ui-collapsed #pixelgrid-fab{ left:16px; }
+.app:not(.ui-collapsed) #pixelgrid-fab{ left:calc(var(--side) + 16px); }
+#pixelgrid-fab svg{ width:28px;height:28px; stroke:#e5e7eb; fill:none; stroke-width:2; }
+
 .app.ui-collapsed .sheets-btn{left:16px}
 .app:not(.ui-collapsed) .sheets-btn{left:calc(var(--side) + 16px)}
 .sheets-btn svg{width:28px;height:28px;stroke:#e5e7eb;fill:none;stroke-width:2}
@@ -189,7 +268,10 @@ a{color:var(--accent)}
       <!-- NEW: header toolbar with Edit toggle -->
       <div class="toolbar">
         <button id="edit-toggle" class="btn small" title="Toggle edit mode">Edit: OFF</button>
+        <!-- NEW: opens the Pixel Grid modal -->
+        <button id="pixelgrid-open" class="btn small" title="Open Pixel Grid">Pixel Grid</button>
       </div>
+
 
       <button id="ui-hide" class="ui-hide" title="Hide UI">Hide UI</button>
     </div>
@@ -322,6 +404,17 @@ a{color:var(--accent)}
   <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
 </button>
 
+<button id="pixelgrid-fab" title="Open Pixel Grid" aria-label="Open Pixel Grid">
+  <svg viewBox="0 0 24 24">
+    <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+    <line x1="9" y1="3" x2="9" y2="21"></line>
+    <line x1="15" y1="3" x2="15" y2="21"></line>
+    <line x1="3" y1="9" x2="21" y2="9"></line>
+    <line x1="3" y1="15" x2="21" y2="15"></line>
+  </svg>
+</button>
+
+
 <!-- Sheets View -->
 <div id="sheets-view" class="sheets-view">
   <div class="sheets-header">
@@ -347,6 +440,471 @@ a{color:var(--accent)}
     <div id="sheets-error" class="err"></div>
   </div>
 </div>
+
+
+<!-- ===== Pixel Grid Modal ===== -->
+<div id="pixelgrid-modal" class="modal">
+  <div class="modal-card pg-modal-card">
+    <h3 style="margin-bottom:6px">Pixel Grid</h3>
+    <small class="hint">Plot pixels using <code>(x,y,#hex)</code>. Bulk paste supported. 0- or 1-indexed accepted.</small>
+
+    <div class="pg-controls" style="display:grid;grid-template-columns:1fr auto;gap:12px;margin-top:10px;">
+      <div class="pg-left" style="display:grid;gap:10px;">
+        <!-- Size & zoom -->
+        <div class="pg-row" style="display:grid;grid-template-columns:repeat(6,auto);gap:8px;align-items:end;">
+          <div>
+            <div class="hint">Width</div>
+            <input id="pg-w" type="number" min="1" value="32">
+          </div>
+          <div>
+            <div class="hint">Height</div>
+            <input id="pg-h" type="number" min="1" value="32">
+          </div>
+          <div style="grid-column:span 2;">
+            <div class="hint">Zoom (cell px)</div>
+            <input id="pg-zoom" type="range" min="6" max="48" step="1" value="16" style="width:200px">
+          </div>
+          <button id="pg-apply-size" class="btn small">Apply Size</button>
+          <button id="pg-clear" class="btn small danger" title="Clear all pixels">Clear</button>
+        </div>
+
+        <!-- Photo settings -->
+        <div class="pg-photo" style="display:grid;grid-template-columns:repeat(8,auto);gap:8px;align-items:end;">
+          <div>
+            <div class="hint">Blur (px)</div>
+            <input id="pg-blur" type="number" min="0" max="40" step="1" value="0" />
+          </div>
+          <div>
+            <div class="hint">Saturation (%)</div>
+            <input id="pg-sat" type="number" min="0" max="300" step="1" value="100" />
+          </div>
+          <div>
+            <div class="hint">Contrast (%)</div>
+            <input id="pg-con" type="number" min="0" max="300" step="1" value="100" />
+          </div>
+          <div>
+            <div class="hint">Brightness (%)</div>
+            <input id="pg-bri" type="number" min="0" max="300" step="1" value="100" />
+          </div>
+          <button id="pg-filters-reset" class="btn small">Reset Filters</button>
+          <span class="hint" id="pg-filters-msg" style="grid-column:span 3;"></span>
+        </div>
+
+        <!-- Single add + quick hint -->
+        <div class="pg-row" style="display:grid;grid-template-columns:repeat(6,auto);gap:8px;align-items:end;">
+          <div>
+            <div class="hint">x</div>
+            <input id="pg-x" type="number" min="0" value="0">
+          </div>
+          <div>
+            <div class="hint">y</div>
+            <input id="pg-y" type="number" min="0" value="0">
+          </div>
+          <div>
+            <div class="hint">Color</div>
+            <input id="pg-color" type="text" value="#000000" placeholder="#RRGGBB">
+          </div>
+          <button id="pg-add" class="btn small">Add pixel</button>
+          <div style="grid-column:span 2;">
+            <div class="hint">Quick Hint paste</div>
+            <input id="pg-hint" type="text" placeholder='(30,17,#949A9B),(22,24,#6F7378),(25,17,#909799),(25,31,#2E3023)' />
+          </div>
+        </div>
+
+        <!-- Bulk -->
+        <div>
+          <div class="hint" style="margin-bottom:4px;">Bulk paste (comma/space/newline separated)</div>
+          <textarea id="pg-bulk" placeholder="(x,y,#hex), (x,y,#hex) …"
+            style="width:100%;min-height:90px;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--panel-2);color:var(--text);font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;"></textarea>
+          <div style="display:flex;gap:8px;margin-top:8px;">
+            <button id="pg-parse" class="btn small">Parse & Plot</button>
+            <button id="pg-export" class="btn small">Export PNG</button>
+            <span class="hint" id="pg-msg" style="align-self:center;"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="pg-right" style="display:grid;gap:8px;justify-items:center;">
+        <!-- NOTE: styles are driven by CSS now; no inline max-* here -->
+        <div class="pg-canvas-wrap">
+          <canvas id="pg-canvas" width="512" height="512" style="display:block;image-rendering:pixelated;cursor:zoom-in;"></canvas>
+        </div>
+        <small class="hint">Scroll to zoom • Click cell to pick coordinates • Grid autosaves & syncs.</small>
+      </div>
+    </div>
+
+    <div style="display:flex;justify-content:flex-end;margin-top:12px;gap:8px;">
+      <button id="pixelgrid-close" class="btn small">Close</button>
+    </div>
+  </div>
+</div>
+
+
+
+<script>
+// ===================== Pixel Grid Module (Supabase + Filters) =====================
+(() => {
+  const LS_KEY = 'sqkii-pixelgrid-v2';
+  const PG_SYNC_DEBOUNCE = 400;
+
+  // DOM
+  const openBtn   = document.getElementById('pixelgrid-open');
+  const modal     = document.getElementById('pixelgrid-modal');
+  const closeBtn  = document.getElementById('pixelgrid-close');
+  const appEl     = document.getElementById('app');
+
+  const c         = document.getElementById('pg-canvas');
+  const ctx       = c.getContext('2d', { alpha: false });
+
+  const wInput    = document.getElementById('pg-w');
+  const hInput    = document.getElementById('pg-h');
+  const zoomRange = document.getElementById('pg-zoom');
+  const applySize = document.getElementById('pg-apply-size');
+  const clearBtn  = document.getElementById('pg-clear');
+
+  const xInput    = document.getElementById('pg-x');
+  const yInput    = document.getElementById('pg-y');
+  const colorInp  = document.getElementById('pg-color');
+  const addBtn    = document.getElementById('pg-add');
+
+  const hintInp   = document.getElementById('pg-hint');
+  const bulkTA    = document.getElementById('pg-bulk');
+  const parseBtn  = document.getElementById('pg-parse');
+  const exportBtn = document.getElementById('pg-export');
+  const msgEl     = document.getElementById('pg-msg');
+
+  // Filters
+  const blurInp   = document.getElementById('pg-blur');
+  const satInp    = document.getElementById('pg-sat');
+  const conInp    = document.getElementById('pg-con');
+  const briInp    = document.getElementById('pg-bri');
+  const resetFilt = document.getElementById('pg-filters-reset');
+  const filtMsg   = document.getElementById('pg-filters-msg');
+
+  // State
+  let W = 32, H = 32, CELL = 16;
+  const pixels = new Map();
+  const filters = { blur: 0, sat: 100, con: 100, bri: 100 };
+
+  // Supabase binding (hooked by joinRoom/subscribeRoom later)
+  let bound = {
+    supabase: null,
+    currentRoomCode: null,
+    clientId: null,
+    suppressNext: false
+  };
+
+  // Persistence
+  const serialize = () => ({
+    W, H, CELL,
+    pixels: [...pixels.entries()],
+    filters: { ...filters }
+  });
+  function saveLocal(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(serialize())); }catch{} }
+  function loadLocal(){
+    try{
+      const raw = localStorage.getItem(LS_KEY); if(!raw) return;
+      const o = JSON.parse(raw);
+      W = Math.max(1, o.W|0 || 32);
+      H = Math.max(1, o.H|0 || 32);
+      CELL = Math.min(48, Math.max(6, o.CELL|0 || 16));
+      pixels.clear(); for (const [k,v] of (o.pixels||[])) pixels.set(k,v);
+      Object.assign(filters, o.filters || {});
+    }catch{}
+  }
+
+  // Utils
+  const clamp = (v,a,b)=> Math.min(b, Math.max(a, v));
+  const key = (x,y)=> `${x},${y}`;
+  function parseHex(s){
+    if(!s) return null;
+    const t = s.trim();
+    return /^#?[0-9a-f]{6}$/i.test(t) ? (t[0]==='#'?t:'#'+t) : null;
+  }
+
+  // Draw
+function drawGrid(){
+  const pad = 0;                        // no outer padding
+  c.width  = W * CELL;
+  c.height = H * CELL;
+
+  ctx.fillStyle = '#0b0d11';
+  ctx.fillRect(0, 0, c.width, c.height);
+
+  for (let y = 0; y < H; y++){
+    for (let x = 0; x < W; x++){
+      const v = pixels.get(key(x,y));
+      if (v) { ctx.fillStyle = v; }
+      else {
+        const d = ((x+y)&1) ? 24 : 18;  // checker background for empty cells
+        ctx.fillStyle = `rgb(${d},${d},${d})`;
+      }
+      ctx.fillRect(x*CELL, y*CELL, CELL, CELL); // note: no +pad, no 0.5 lines
+    }
+  }
+
+  // no stroke lines at all
+  applyFilters();
+}
+
+  function applyFilters(){
+    const blur = clamp(parseInt(blurInp.value ?? filters.blur,10) || 0,   0, 40);
+    const sat  = clamp(parseInt(satInp.value  ?? filters.sat,10)  || 100, 0, 300);
+    const con  = clamp(parseInt(conInp.value  ?? filters.con,10)  || 100, 0, 300);
+    const bri  = clamp(parseInt(briInp.value  ?? filters.bri,10)  || 100, 0, 300);
+    filters.blur=blur; filters.sat=sat; filters.con=con; filters.bri=bri;
+    c.style.filter = `blur(${blur}px) saturate(${sat}%) contrast(${con}%) brightness(${bri}%)`;
+  }
+
+  function setPixel(x,y,hex){
+    if(x<0||y<0||x>=W||y>=H) return false;
+    const color=parseHex(hex); if(!color) return false;
+    pixels.set(key(x,y), color); return true;
+  }
+
+  // Parse (x,y,#hex) tuples, auto-detect 1-indexing if any equals size
+  function parseTriples(str){
+    const out=[]; if(!str) return out;
+    const m=String(str).match(/\(?\s*(\d+)\s*[, ]\s*(\d+)\s*[, ]\s*(#[0-9a-f]{6})\s*\)?/ig)||[];
+    for(const tok of m){
+      const parts=tok.replace(/[()]/g,'').split(/[, ]/).filter(Boolean);
+      if(parts.length>=3){
+        const x=parseInt(parts[0],10), y=parseInt(parts[1],10), hex=parseHex(parts[2]);
+        if(Number.isFinite(x)&&Number.isFinite(y)&&hex) out.push({x,y,hex});
+      }
+    }
+    if(!out.length) return out;
+    const oneIndexed = out.some(p=>p.x===W || p.y===H);
+    return out.map(p=>({ x:clamp(p.x-(oneIndexed?1:0),0,W-1), y:clamp(p.y-(oneIndexed?1:0),0,H-1), hex:p.hex }));
+  }
+
+  function refreshInputs(){
+    wInput.value=W; hInput.value=H; zoomRange.value=CELL;
+    blurInp.value=filters.blur; satInp.value=filters.sat; conInp.value=filters.con; briInp.value=filters.bri;
+    drawGrid();
+    saveLocal();
+    saveRemoteDebounced();
+  }
+
+  // Modal
+  function openModal(){
+    if(!hintInp.value.trim()){
+      hintInp.value='(30,17,#949A9B),(22,24,#6F7378),(25,17,#909799),(25,31,#2E3023)';
+    }
+    modal.classList.add('visible'); appEl.classList.add('blocked-by-modal');
+    drawGrid();
+  }
+  function closeModal(){
+    modal.classList.remove('visible');
+    appEl.classList.remove('blocked-by-modal');
+  }
+
+  openBtn?.addEventListener('click', openModal);
+  closeBtn?.addEventListener('click', closeModal);
+  modal?.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+
+  // Option A (direct): call openModal on FAB click
+  document.getElementById('pixelgrid-fab')?.addEventListener('click', openModal);
+
+  // Size / zoom / clear
+  applySize.addEventListener('click', ()=>{
+    const nw=Math.max(1,parseInt(wInput.value,10)||32);
+    const nh=Math.max(1,parseInt(hInput.value,10)||32);
+    if(nw!==W||nh!==H){
+      W=nw; H=nh;
+      for(const k of [...pixels.keys()]){
+        const [sx,sy]=k.split(',').map(n=>parseInt(n,10));
+        if(sx<0||sy<0||sx>=W||sy>=H) pixels.delete(k);
+      }
+      refreshInputs();
+    }
+  });
+  zoomRange.addEventListener('input', ()=>{
+    CELL = clamp(parseInt(zoomRange.value,10)||16, 6, 48);
+    refreshInputs();
+  });
+  clearBtn.addEventListener('click', ()=>{
+    if(!confirm('Clear all pixels from this grid?')) return;
+    pixels.clear(); drawGrid(); saveLocal(); saveRemoteDebounced();
+  });
+
+  // Add pixels
+  addBtn.addEventListener('click', ()=>{
+    const xx=parseInt(xInput.value,10), yy=parseInt(yInput.value,10);
+    const ok=setPixel(xx,yy,colorInp.value);
+    if(!ok){ msgEl.textContent='Invalid / out of bounds'; setTimeout(()=>msgEl.textContent='',1500); return; }
+    drawGrid(); saveLocal(); saveRemoteDebounced();
+  });
+  parseBtn.addEventListener('click', ()=>{
+    const txt=(bulkTA.value+' '+hintInp.value).trim();
+    const triples=parseTriples(txt);
+    let added=0; for(const t of triples){ if(setPixel(t.x,t.y,t.hex)) added++; }
+    msgEl.textContent = added?`Plotted ${added} pixel(s).`:'No valid pixels found.';
+    drawGrid(); saveLocal(); saveRemoteDebounced(); setTimeout(()=>msgEl.textContent='',1500);
+  });
+
+  // Export (no grid lines)
+// Pick export scale: use current CELL, but clamp so it's not too small/huge
+function exportScale(){ return Math.max(8, Math.min(64, Math.round(CELL))); }
+
+exportBtn.addEventListener('click', ()=>{
+  // 1) build a 1:1 pixel canvas
+  const src = document.createElement('canvas');
+  src.width  = W;
+  src.height = H;
+  const sctx = src.getContext('2d');
+  const img  = sctx.createImageData(W, H);
+  const data = img.data;
+
+  for (let y = 0; y < H; y++){
+    for (let x = 0; x < W; x++){
+      const v = pixels.get(key(x,y));
+      const i = (y*W + x) * 4;
+      if (v){
+        data[i+0] = parseInt(v.slice(1,3), 16);
+        data[i+1] = parseInt(v.slice(3,5), 16);
+        data[i+2] = parseInt(v.slice(5,7), 16);
+        data[i+3] = 255;
+      } else {
+        // empty pixels -> black (or choose your background)
+        data[i+0] = 0; data[i+1] = 0; data[i+2] = 0; data[i+3] = 255;
+      }
+    }
+  }
+  sctx.putImageData(img, 0, 0);
+
+  // 2) upscale to a larger canvas without smoothing (keeps blocky pixels)
+  const scale = exportScale();          // e.g. 16, 24, etc.
+  const out   = document.createElement('canvas');
+  out.width   = W * scale;
+  out.height  = H * scale;
+  const octx  = out.getContext('2d');
+  octx.imageSmoothingEnabled = false;
+  octx.webkitImageSmoothingEnabled = false;
+  octx.msImageSmoothingEnabled = false;
+
+  octx.drawImage(src, 0, 0, out.width, out.height);
+
+  // download
+  const a = document.createElement('a');
+  a.href = out.toDataURL('image/png');
+  a.download = `pixel-grid-${W}x${H}-x${scale}.png`;
+  a.click();
+});
+
+  // Canvas interactions
+  c.addEventListener('click', (e)=>{
+    const r=c.getBoundingClientRect();
+    const x=Math.floor((e.clientX-r.left-1)/CELL);
+    const y=Math.floor((e.clientY-r.top -1)/CELL);
+    if(x>=0&&y>=0&&x<W&&y<H){ xInput.value=x; yInput.value=y; msgEl.textContent=`Picked (${x},${y})`; setTimeout(()=>msgEl.textContent='',900); }
+  }, {passive:true});
+  c.addEventListener('wheel', (e)=>{
+    e.preventDefault();
+    const d=Math.sign(e.deltaY);
+    CELL = clamp(CELL - d*2, 6, 48);
+    zoomRange.value=CELL; drawGrid(); saveLocal(); saveRemoteDebounced();
+  }, {passive:false});
+
+// ===== Filter handlers (instant update, works with step arrows, mobile, etc.) =====
+(function(){
+  let msgTimer = null;
+
+  function onFilterChangeInstant(){
+    // apply + persist + sync
+    applyFilters();
+    saveLocal();
+    saveRemoteDebounced();
+
+    // toast-y status text (debounced so it doesn't flicker)
+    filtMsg.textContent = `blur ${filters.blur}px • sat ${filters.sat}% • con ${filters.con}% • bri ${filters.bri}%`;
+    if (msgTimer) clearTimeout(msgTimer);
+    msgTimer = setTimeout(() => { filtMsg.textContent = ''; }, 1200);
+  }
+
+  // bind helper: react to typing, steppers (↑/↓), and mobile spinners
+  const bindInstant = (el) => {
+    // fires as you type or drag the spinner in most browsers
+    el.addEventListener('input', onFilterChangeInstant, { passive: true });
+    // safety net for browsers that only fire on change/commit
+    el.addEventListener('change', onFilterChangeInstant, { passive: true });
+
+    // make sure arrow/PageUp/PageDown steps trigger an update immediately
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'PageUp' || e.key === 'PageDown') {
+        // defer to let the native step apply first
+        setTimeout(onFilterChangeInstant, 0);
+      }
+    });
+
+    // when the number input has focus, don't let the page scroll steal the wheel
+    el.addEventListener('wheel', (e) => {
+      if (document.activeElement === el) e.stopPropagation();
+    }, { passive: true });
+  };
+
+  [blurInp, satInp, conInp, briInp].forEach(bindInstant);
+
+  // reset button
+  resetFilt.addEventListener('click', () => {
+    filters.blur = 0; filters.sat = 100; filters.con = 100; filters.bri = 100;
+    blurInp.value = 0; satInp.value = 100; conInp.value = 100; briInp.value = 100;
+    onFilterChangeInstant();
+  });
+})();
+
+
+  // Supabase sync
+  const debounce=(fn,ms)=>{ let t=null; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; };
+  async function saveRemoteNow(){
+    if(!bound.supabase || !bound.currentRoomCode) return;
+    try{
+      bound.suppressNext=true;
+      await bound.supabase
+        .from('rooms')
+        .update({
+          pixelgrid: serialize(),
+          pixelgrid_updated_at: new Date().toISOString(),
+          pixelgrid_updated_by: bound.clientId
+        })
+        .eq('code', bound.currentRoomCode);
+      setTimeout(()=>bound.suppressNext=false, 250);
+    }catch(e){ console.warn('PixelGrid Supabase save failed:', e); }
+  }
+  const saveRemoteDebounced = debounce(saveRemoteNow, PG_SYNC_DEBOUNCE);
+
+  function applyRemote(pg, who){
+    if(!pg || bound.suppressNext) return;
+    if(who && who===bound.clientId) return;
+    try{
+      W=Math.max(1, pg.W|0 || 32);
+      H=Math.max(1, pg.H|0 || 32);
+      CELL=Math.min(48, Math.max(6, pg.CELL|0 || 16));
+      pixels.clear(); for(const [k,v] of (pg.pixels||[])) pixels.set(k,v);
+      Object.assign(filters, pg.filters||{});
+      refreshInputs(); // redraw + local save + remote (sender is suppressed)
+    }catch(e){ console.warn('PixelGrid applyRemote failed:', e); }
+  }
+
+  // Public binder for your room flow
+  window.PixelGrid = {
+    bindToRoom({ supabase, currentRoomCode, clientId }){
+      bound.supabase=supabase; bound.currentRoomCode=currentRoomCode; bound.clientId=clientId;
+      // initial fetch
+      bound.supabase.from('rooms').select('pixelgrid,pixelgrid_updated_by').eq('code', currentRoomCode).maybeSingle()
+        .then(({data})=>{ if(data?.pixelgrid) applyRemote(data.pixelgrid, data.pixelgrid_updated_by); })
+        .catch(()=>{});
+    },
+    applyRemote
+  };
+
+  // Init
+  loadLocal();
+  wInput.value=W; hInput.value=H; zoomRange.value=CELL;
+  blurInp.value=filters.blur; satInp.value=filters.sat; conInp.value=filters.con; briInp.value=filters.bri;
+  drawGrid();
+})();
+</script>
 
 
 <script>
@@ -864,7 +1422,7 @@ function refreshGroupGL(entry){ const src=mapgl.getSource(entry.glSourceId); if(
 /** Theme flag used only for Leaflet vector styling.
  *  Set to 'on-osm' when you switch to OpenStreetMap raster.
  *  Set to 'on-gl' when you’re on MapLibre styles.
-
+ */
 function dollarDataUrl(size = 32) {
   return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(dollarSvg(size));
 }
@@ -878,30 +1436,18 @@ function leafletIconFor(url, size = 32) {
 }
 
 /** Theme-aware polygon/area style just for Leaflet */
+
 function circleStyleForLeaflet(props = {}) {
   const onOSM = (leafletCircleTheme === 'on-osm');
-  const stroke = onOSM ? '#0b0d11' : (props._stroke || '#ffffff'); // darker stroke on OSM
+  const stroke = onOSM ? '#0b0d11' : (props._stroke || '#ffffff');
   const fill   = props._fill || '#ffffff';
-
-  // slightly stronger fill on OSM so it reads on the light basemap
   const baseFillOp = (props._fillOpacity ?? 0.18);
   const fillOpacity = onOSM ? Math.min(0.30, baseFillOp + 0.08) : baseFillOp;
-
   const strokeOpacity = (props._strokeOpacity ?? 0.7);
   const weight        = (props._weight ?? 2);
   const strokeOn      = (strokeOpacity > 0) && (weight > 0);
-
-  return {
-    color: stroke,
-    weight,
-    opacity: strokeOpacity,
-    fillColor: fill,
-    fillOpacity,
-    stroke: strokeOn
-  };
+  return { color: stroke, weight, opacity: strokeOpacity, fillColor: fill, fillOpacity, stroke: strokeOn };
 }
-
-/** Simple line style (theme doesn’t matter much for lines here) */
 function lineStyleForLeaflet(props = {}) {
   return {
     color: props._stroke || '#ffffff',
@@ -1886,45 +2432,106 @@ function saveState(){ syncToServerDebounced(); }
 let roomChannel = null;
 function subscribeRoom(code){
   try{
-    if(roomChannel){ roomChannel.unsubscribe(); roomChannel=null; }
-    roomChannel = supabase.channel('rooms-'+code)
-      .on('postgres_changes',
-        { event:'*', schema:'public', table:'rooms', filter:'code=eq.'+code },
-        async payload=>{
+    if (roomChannel){ roomChannel.unsubscribe(); roomChannel = null; }
+
+    roomChannel = supabase.channel('rooms-' + code)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'rooms', filter: 'code=eq.' + code },
+        async (payload) => {
           try{
             const row = payload.new || payload.record;
-            if(!row) return;
-            if(row.updated_by === clientId) return;
-            if(suppressNextRemoteApply) return;
-            await applyStateArray(row.state || []);
-            localSaveOnly();
-          }catch(e){ console.error('Apply remote state failed', e); }
-        })
-      .subscribe(()=>{});
-  }catch(e){ console.error('subscribeRoom guard:', e); }
+            if (!row) return;
+            if (suppressNextRemoteApply) return;
+
+            // Figure out authorship for each payload section
+            const stateAuthor   = row.updated_by;
+            const pixelAuthor   = row.pixelgrid_updated_by || row.updated_by;
+
+            // 1) Apply MAP STATE only if it wasn't authored by me
+            if (row.state && stateAuthor !== clientId) {
+              await applyStateArray(row.state || []);
+              localSaveOnly();
+            }
+
+            // 2) Apply PIXEL GRID even if map state was mine (they're versioned separately)
+            if (window.PixelGrid && typeof window.PixelGrid.applyRemote === 'function') {
+              // only apply if pixelgrid exists and wasn't authored by me
+              if (row.pixelgrid && pixelAuthor !== clientId) {
+                try {
+                  window.PixelGrid.applyRemote(row.pixelgrid, pixelAuthor);
+                } catch (e) {
+                  console.warn('PixelGrid realtime apply failed:', e);
+                }
+              }
+            }
+
+          } catch (e) {
+            console.error('Apply remote state failed', e);
+          }
+        }
+      )
+      .subscribe(() => {});
+  } catch(e){
+    console.error('subscribeRoom guard:', e);
+  }
 }
+
 
 async function joinRoom(code){
   currentRoomCode = code;
   try{
     const existing = await fetchRoom(code);
-    if(existing && existing.state && existing.state.length){
+
+    if (existing && existing.state && existing.state.length){
+      // Load existing shared map state
       await applyStateArray(existing.state);
-    }else{
-      clearAllLayers();
-      try { await loadKMZFromUrl(encodeURI(PRELOAD_GEOHASHES), 'Geohashes'); } catch(e){ console.warn('Preload geohashes failed', e); }
-      for (const name of PRELOAD_COINS){
-        try { await loadKMZFromUrl(encodeURI(name)); console.log('Preloaded', name); break; }
-        catch(e){ console.warn('Preload failed for', name); }
+
+      // (Optional but safe) if Pixel Grid data already exists, hydrate it immediately.
+      // bindToRoom will also fetch — this just makes first paint feel snappier.
+      if (existing.pixelgrid && window.PixelGrid && typeof window.PixelGrid.applyRemote === 'function') {
+        const who = existing.pixelgrid_updated_by || existing.updated_by;
+        try { window.PixelGrid.applyRemote(existing.pixelgrid, who); } catch {}
       }
+    } else {
+      // No shared state yet — start a fresh room with your preload flow
+      clearAllLayers();
+
+      try {
+        await loadKMZFromUrl(encodeURI(PRELOAD_GEOHASHES), 'Geohashes');
+      } catch(e) {
+        console.warn('Preload geohashes failed', e);
+      }
+
+      for (const name of PRELOAD_COINS){
+        try {
+          await loadKMZFromUrl(encodeURI(name));
+          console.log('Preloaded', name);
+          break; // stop after first successful preload
+        } catch(e){
+          console.warn('Preload failed for', name);
+        }
+      }
+
+      // Save the initial room state (map layers)
       await upsertRoomState(code, shallowSerializableState());
+      // Note: Pixel Grid will upsert itself separately on first change via its own saver.
     }
+
+    // Start realtime for this room (map layers + anything else)
     subscribeRoom(code);
-  }catch(e){
+
+    // NEW: Bind Pixel Grid to this room (loads remote pixelgrid if it exists)
+    if (window.PixelGrid && typeof window.PixelGrid.bindToRoom === 'function') {
+      window.PixelGrid.bindToRoom({ supabase, currentRoomCode: code, clientId });
+    }
+
+  } catch(e){
     console.error('Join failed', e);
     throw e;
   }
 }
+
 
 /* ===== Server Modal helpers ===== */
 const modal = document.getElementById('server-modal');
@@ -1955,22 +2562,20 @@ document.getElementById('server-continue').addEventListener('click', ()=>{
   try{ const raw=localStorage.getItem(LS_KEY); if(raw) applyStateArray(JSON.parse(raw)); }catch{}
 });
 
-/* ====================== AUDIO + SFX ====================== */
 /* ====================== AUDIO + SFX (stable) ====================== */
 let audioEnabled = true;
 
-/* --- BGM setup --- */
-const BGM_CAP = 0.10;                   // master cap
-let userBgmSetting = 1;                 // 0..1 user pref if you add a slider later
+// === BGM setup ===
+const BGM_CAP = 0.10;
+let userBgmSetting = 1;
 const bgmTargetVolume = () => BGM_CAP * userBgmSetting;
 
 const bgm = new Audio('Evening Traveler - Road Trip.mp3');
-bgm.preload = 'auto';
-bgm.loop = true;
 bgm.volume = Math.min(bgmTargetVolume(), 1);
+bgm.loop = true;
 
-/* --- Helpers --- */
-const fadeAudio = (a, to = 0, ms = 350) => new Promise(res => {
+// Fade helper
+const fadeAudio = (a, to = 0, ms = 400) => new Promise(res => {
   const from = a.volume || 0, t0 = performance.now();
   const step = t => {
     const k = Math.min(1, (t - t0) / ms);
@@ -1980,143 +2585,65 @@ const fadeAudio = (a, to = 0, ms = 350) => new Promise(res => {
   requestAnimationFrame(step);
 });
 
-const stopHtmlAudio = a => { try { a.pause(); } catch {} }; // don't reset currentTime for bgm
-const stopAllSfx = () => document.querySelectorAll('audio')
-  .forEach(el => { if (el !== bgm) stopHtmlAudio(el); });
+// Stop helpers
+const stopHtmlAudio = a => { try { a.pause(); a.currentTime = 0; } catch {} };
+const stopAllSfx = () => document.querySelectorAll('audio').forEach(el => { if (el !== bgm) stopHtmlAudio(el); });
+const suspendWebAudio = async () => { try { if (audioCtx?.state !== 'suspended') await audioCtx.suspend(); } catch {} };
+const resumeWebAudio  = async () => { try { if (audioCtx?.state === 'suspended') await audioCtx.resume(); } catch {} };
 
-let audioCtx = null;
-let buttonBuffer = null;
-const ensureCtx = () => (audioCtx ||= new (window.AudioContext || window.webkitAudioContext)());
-const resumeWebAudio = async () => { try { if (audioCtx && audioCtx.state === 'suspended') await audioCtx.resume(); } catch {} };
-const suspendWebAudio = async () => { try { if (audioCtx && audioCtx.state !== 'suspended') await audioCtx.suspend(); } catch {} };
+// Handle tab visibility
+document.addEventListener('visibilitychange', async () => {
+  if (document.hidden) {
+    await fadeAudio(bgm, 0, 350); stopHtmlAudio(bgm); stopAllSfx(); await suspendWebAudio();
+    try { if ('mediaSession' in navigator) { navigator.mediaSession.playbackState='none'; navigator.mediaSession.metadata=null; } } catch {}
+  } else {
+    await resumeWebAudio();
+    if (audioEnabled) { try { bgm.volume=0; bgm.loop=true; await bgm.play(); await fadeAudio(bgm, bgmTargetVolume(), 350); } catch {} }
+  }
+});
 
-/* --- Preload Click SFX (WebAudio) + fallback --- */
-const btnFallbackAudio = new Audio('button.mp3');
-btnFallbackAudio.preload = 'auto';
+// Start audio after user click (required by browsers)
+document.addEventListener("pointerdown", () => { bgm.play().catch(()=>{}); }, { once:true, capture:true });
 
-(async () => {
-  try {
-    const res = await fetch('button.mp3', { cache: 'force-cache' });
-    const ab  = await res.arrayBuffer();
-    const ctx = ensureCtx();
-    // Safari: use callback form as backup
+
+let audioCtx = null, buttonBuffer = null;
+const btnFallbackAudio = new Audio('button.mp3'); btnFallbackAudio.preload = 'auto';
+
+(async ()=>{
+  try{
+    const res = await fetch('button.mp3', { cache:'force-cache' });
+    const ab = await res.arrayBuffer();
+    audioCtx = audioCtx || new (window.AudioContext||window.webkitAudioContext)();
     try {
-      buttonBuffer = await new Promise((resolve, reject) => {
-        const p = ctx.decodeAudioData(ab.slice(0), resolve, reject);
-        if (p && p.then) p.then(resolve).catch(reject);
+      buttonBuffer = await new Promise((resolve,reject)=>{
+        const p = audioCtx.decodeAudioData(ab.slice(0), resolve, reject);
+        if (p && typeof p.then === 'function') p.then(resolve).catch(reject);
       });
     } catch {
-      ctx.decodeAudioData(ab.slice(0), buf => buttonBuffer = buf, () => {});
+      audioCtx.decodeAudioData(ab.slice(0), buf=>buttonBuffer=buf, ()=>{});
     }
-  } catch (e) {
-    console.warn('button.mp3 preload failed', e);
-  }
+  }catch(e){ console.warn('button.mp3 preload failed', e); }
 })();
 
-/* --- Click SFX --- */
+function ensureAudioCtxResumed(){ try{ if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); }catch{} }
 function playClick(){
   try{
-    if (!audioEnabled || document.hidden) return;
-    const ctx = ensureCtx();
-    if (ctx.state === 'suspended') ctx.resume().catch(()=>{});
-    if (buttonBuffer){
-      const src = ctx.createBufferSource();
-      src.buffer = buttonBuffer;
-      src.connect(ctx.destination);
-      src.start(0);
-    } else {
+    if(!audioEnabled) return;
+    ensureAudioCtxResumed();
+    if(buttonBuffer && audioCtx){
+      const src = audioCtx.createBufferSource(); src.buffer = buttonBuffer; src.connect(audioCtx.destination); src.start(0);
+    }else{
       btnFallbackAudio.currentTime = 0;
       btnFallbackAudio.play().catch(()=>{});
     }
-  }catch{}
+  }catch(e){}
 }
+document.addEventListener('pointerdown', ()=>{
+  ensureAudioCtxResumed();
+  if(audioEnabled && !document.hidden){ bgm.play().catch(()=>{}); }
+  playClick();
+},{once:true,capture:true});
 
-/* --- Optional: Sonar SFX helper (uses your sonar-sound.mp3) --- */
-const sonarSfx = new Audio('sonar-sound.mp3');
-sonarSfx.preload = 'auto';
-function playSonar(){
-  if (!audioEnabled || document.hidden) return;
-  try { sonarSfx.currentTime = 0; sonarSfx.play().catch(()=>{}); } catch {}
-}
-
-/* --- Media Session niceties (optional) --- */
-function clearMediaSession(){
-  try {
-    if ('mediaSession' in navigator) {
-      navigator.mediaSession.playbackState = 'none';
-      navigator.mediaSession.metadata = null;
-    }
-  } catch {}
-}
-function setMediaSessionPlaying(){
-  try {
-    if ('mediaSession' in navigator) {
-      navigator.mediaSession.playbackState = 'playing';
-    }
-  } catch {}
-}
-
-/* --- Visibility / lifecycle --- */
-let bgmWasPlaying = false;      // remember if we should resume when visible again
-
-async function handleHidden(){
-  bgmWasPlaying = audioEnabled && !bgm.paused;
-  try { await fadeAudio(bgm, 0, 200); } catch {}
-  stopHtmlAudio(bgm);
-  stopAllSfx();
-  clearMediaSession();
-  await suspendWebAudio();
-}
-async function handleVisible(){
-  if (!audioEnabled || document.hidden) return;
-  await resumeWebAudio();
-  if (bgmWasPlaying) {
-    try {
-      bgm.volume = 0;
-      bgm.loop = true;
-      await bgm.play();
-      await fadeAudio(bgm, bgmTargetVolume(), 250);
-      setMediaSessionPlaying();
-    } catch {}
-  }
-}
-
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) handleHidden();
-  else handleVisible();
-});
-window.addEventListener('pagehide', handleHidden, { capture:true });
-window.addEventListener('freeze',   handleHidden, { capture:true });
-window.addEventListener('blur',     handleHidden, { capture:true });
-window.addEventListener('pageshow', handleVisible, { capture:true });
-window.addEventListener('focus',    handleVisible, { capture:true });
-
-/* --- First user gesture: unlock audio cleanly (single handler) --- */
-document.addEventListener('pointerdown', async (ev) => {
-  if (document.hidden) return;
-
-  // Resume WebAudio & start bgm if enabled
-  await resumeWebAudio();
-  if (audioEnabled && bgm.paused) {
-    try {
-      bgm.volume = bgm.volume || 0; // keep current
-      await bgm.play();
-      setMediaSessionPlaying();
-    } catch {}
-  }
-
-  // Only play tap sound if the gesture was on a button
-  if (ev.target && ev.target.closest('button')) {
-    playClick();
-  }
-}, { once: true, capture: true });
-
-/* --- Global button click SFX (post-unlock) --- */
-document.addEventListener('click', (ev) => {
-  if (ev.target && ev.target.closest('button')) playClick();
-}, { capture: true });
-
-/* --- Audio toggle button wiring --- */
 const audioBtn = document.getElementById('audio-toggle');
 function setAudioIcon(on){
   audioBtn.innerHTML = on
@@ -2124,33 +2651,14 @@ function setAudioIcon(on){
     : `<svg viewBox="0 0 24 24" fill="none" stroke="#e5e7eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="1" x2="1" y2="23"></line></svg>`;
 }
 setAudioIcon(true);
-
-audioBtn.addEventListener('click', async ()=>{
+audioBtn.addEventListener('click', ()=>{
   audioEnabled = !audioEnabled;
   setAudioIcon(audioEnabled);
-
-  if (!audioEnabled) {
-    // hard mute
-    stopAllSfx();
-    bgm.pause();
-    clearMediaSession();
-  } else if (!document.hidden) {
-    // soft resume
-    await resumeWebAudio();
-    try {
-      if (bgm.paused) {
-        bgm.volume = 0;
-        bgm.loop = true;
-        await bgm.play();
-        await fadeAudio(bgm, bgmTargetVolume(), 200);
-        setMediaSessionPlaying();
-      }
-    } catch {}
-  }
+  if(!audioEnabled) bgm.pause(); else if(!document.hidden) bgm.play().catch(()=>{});
 });
+document.addEventListener('click', (ev)=>{ if(ev.target.closest('button')) playClick(); }, {capture:true});
 
-/* === (optional) expose playSonar globally if other code calls it === */
-window.playSonar = playSonar;
+const sonarSfx = new Audio('scanning.mp3');
 
 
 /* ====================== GPS CONTROLS ====================== */
