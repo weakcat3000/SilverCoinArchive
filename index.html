@@ -130,67 +130,66 @@ a{color:var(--accent)}
 .pg-canvas-wrap::-webkit-scrollbar{height:8px;width:8px}
 .pg-canvas-wrap{scrollbar-width:thin;scrollbar-color:var(--border) transparent}
 
-/* Draw panel */
-.draw-grid{display:grid;grid-template-columns:1fr auto;gap:8px}
-.draw-grid #draw-coord{grid-column:1/-1}
-/* === Pixel Grid modal sizing / containment === */
-.pg-modal-card{
-  max-width:1170px;   /* ~30% larger than 900px */
-  width:96%;
-  overflow:hidden;    /* keep everything clipped inside the card */
-}
-
-
-/* ===== Pixel Grid: bigger canvas, tighter controls ===== */
+/* --- Pixel Grid layout fix --- */
 #pixelgrid-modal .pg-modal-card{
   max-width: 1400px;
   width: 98%;
-  max-height: 92vh;               /* taller modal */
+  max-height: 92vh;
   display: grid;
-  grid-auto-rows: auto 1fr auto;  /* header / controls / footer */
-  overflow: hidden;
+  grid-auto-rows: auto 1fr auto;
+  overflow: hidden;                /* keep canvas clipped inside modal */
 }
 
 #pixelgrid-modal .pg-controls{
-  grid-template-columns: 360px 1fr !important; /* narrow control rail + big canvas */
+  display: grid;
+  grid-template-columns: 360px 1fr;/* compact left rail + big canvas */
   gap: 12px;
   align-items: start;
+  margin-top: 10px;
 }
 
-/* compact the left rail */
-#pixelgrid-modal .pg-left{ gap: 6px; }
-#pixelgrid-modal .pg-row{ gap: 6px; }
-#pixelgrid-modal .pg-photo{ gap: 6px; }
-#pixelgrid-modal .pg-row input,
-#pixelgrid-modal .pg-photo input,
-#pixelgrid-modal #pg-bulk,
-#pixelgrid-modal .btn.small{
-  font-size: 12px;
-  padding: 6px 8px;
-}
+/* left rail compaction */
+#pixelgrid-modal .pg-left{ display: grid; gap: 10px; }
+#pixelgrid-modal .pg-row{ display: grid; grid-template-columns: repeat(6,auto); gap: 8px; align-items: end; }
+#pixelgrid-modal .pg-photo{ display: grid; grid-template-columns: repeat(8,auto); gap: 8px; align-items: end; }
 
-/* shorter bulk box */
-#pixelgrid-modal #pg-bulk{ min-height: 60px; }
+/* make the range & number inputs breathe */
+#pixelgrid-modal input[type="range"]{ width: 100%; }
+#pixelgrid-modal input[type="number"],
+#pixelgrid-modal input[type="text"]{ min-width: 64px; }
 
-/* canvas gets more space */
-#pixelgrid-modal .pg-right{ align-content: start; }
+/* canvas container: big view but contained */
+#pixelgrid-modal .pg-right{ display:grid; gap:8px; justify-items:center; align-content:start; }
 #pixelgrid-modal .pg-canvas-wrap{
-  max-height: 78vh;  /* was ~70vh */
-  max-width: 80vw;   /* was ~70vw */
-}
-
-#pixelgrid-modal .pg-right small.hint{ margin-top: -2px; }
-
-
-/* canvas scroller: bigger view but contained */
-.pg-canvas-wrap{
   border:1px solid var(--border);
   border-radius:8px;
-  overflow:auto;      /* <- prevents peek-out when zoomed */
-  max-height:70vh;    /* was 55vh */
-  max-width:70vw;     /* was 55vw */
+  overflow:auto;                   /* prevents “floating” beyond modal */
+  max-height: 78vh;
+  max-width: 80vw;
   background:#111;
 }
+
+/* Pixel Grid: keep the filter message from shifting inputs */
+#pixelgrid-modal .pg-photo {
+  position: relative;                 /* safe for Option B too */
+  align-items: end;                   /* already there, but explicit */
+}
+
+#pixelgrid-modal #pg-filters-msg {
+  grid-column: 1 / -1;                /* full-width row */
+  white-space: nowrap;                /* no wrapping */
+  overflow: hidden;                   /* crop if long */
+  text-overflow: ellipsis;
+  min-height: 1.2em;                  /* reserve a line even when empty */
+  justify-self: end;                  /* sit on the right */
+  line-height: 1.2;                   /* tidy baseline */
+  margin-top: 2px;                    /* tiny gap from controls */
+}
+
+
+
+
+
 /* Sonar */
 .sonar-btn{position:fixed;right:16px;bottom:16px;z-index:1500;width:64px;height:64px;border-radius:12px;background:#0e1420;border:1px solid var(--border);box-shadow:0 8px 24px rgba(0,0,0,.35);background-image:url('metal-sonar.png');background-size:contain;background-repeat:no-repeat;background-position:center;cursor:pointer}
 .sheets-btn{position:fixed;left:calc(var(--side) + 16px);bottom:16px;z-index:900;width:56px;height:56px;border-radius:12px;background:#0e1420;border:1px solid var(--border);box-shadow:0 8px 24px rgba(0,0,0,.35);cursor:pointer;display:grid;place-items:center;transition:left .28s ease}
@@ -350,7 +349,9 @@ a{color:var(--accent)}
 </div>
 
 <!-- ===== Server Code Modal ===== -->
-<div id="server-modal" class="modal visible">
+<div id="server-modal" class="modal">
+
+
   <div class="modal-card">
     <h3>Join a server</h3>
     <small>Enter your shared <strong>Server Code</strong> to sync with others.</small>
@@ -448,10 +449,10 @@ a{color:var(--accent)}
     <h3 style="margin-bottom:6px">Pixel Grid</h3>
     <small class="hint">Plot pixels using <code>(x,y,#hex)</code>. Bulk paste supported. 0- or 1-indexed accepted.</small>
 
-    <div class="pg-controls" style="display:grid;grid-template-columns:1fr auto;gap:12px;margin-top:10px;">
-      <div class="pg-left" style="display:grid;gap:10px;">
+    <div class="pg-controls">
+      <div class="pg-left">
         <!-- Size & zoom -->
-        <div class="pg-row" style="display:grid;grid-template-columns:repeat(6,auto);gap:8px;align-items:end;">
+        <div class="pg-row">
           <div>
             <div class="hint">Width</div>
             <input id="pg-w" type="number" min="1" value="32">
@@ -462,14 +463,14 @@ a{color:var(--accent)}
           </div>
           <div style="grid-column:span 2;">
             <div class="hint">Zoom (cell px)</div>
-            <input id="pg-zoom" type="range" min="6" max="48" step="1" value="16" style="width:200px">
+            <input id="pg-zoom" type="range" min="6" max="48" step="1" value="16">
           </div>
           <button id="pg-apply-size" class="btn small">Apply Size</button>
           <button id="pg-clear" class="btn small danger" title="Clear all pixels">Clear</button>
         </div>
 
         <!-- Photo settings -->
-        <div class="pg-photo" style="display:grid;grid-template-columns:repeat(8,auto);gap:8px;align-items:end;">
+        <div class="pg-photo">
           <div>
             <div class="hint">Blur (px)</div>
             <input id="pg-blur" type="number" min="0" max="40" step="1" value="0" />
@@ -491,7 +492,7 @@ a{color:var(--accent)}
         </div>
 
         <!-- Single add + quick hint -->
-        <div class="pg-row" style="display:grid;grid-template-columns:repeat(6,auto);gap:8px;align-items:end;">
+        <div class="pg-row">
           <div>
             <div class="hint">x</div>
             <input id="pg-x" type="number" min="0" value="0">
@@ -524,8 +525,7 @@ a{color:var(--accent)}
         </div>
       </div>
 
-      <div class="pg-right" style="display:grid;gap:8px;justify-items:center;">
-        <!-- NOTE: styles are driven by CSS now; no inline max-* here -->
+      <div class="pg-right">
         <div class="pg-canvas-wrap">
           <canvas id="pg-canvas" width="512" height="512" style="display:block;image-rendering:pixelated;cursor:zoom-in;"></canvas>
         </div>
@@ -539,9 +539,8 @@ a{color:var(--accent)}
   </div>
 </div>
 
-
-
 <script>
+
 // ===================== Pixel Grid Module (Supabase + Filters) =====================
 (() => {
   const LS_KEY = 'sqkii-pixelgrid-v2';
@@ -723,9 +722,28 @@ function drawGrid(){
     CELL = clamp(parseInt(zoomRange.value,10)||16, 6, 48);
     refreshInputs();
   });
-  clearBtn.addEventListener('click', ()=>{
-    if(!confirm('Clear all pixels from this grid?')) return;
-    pixels.clear(); drawGrid(); saveLocal(); saveRemoteDebounced();
+  // Replace the existing clearBtn listener with this
+  clearBtn.addEventListener('click', (e)=>{
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Hold Shift/Ctrl/Cmd to skip the prompt
+    const ok = (e.shiftKey || e.ctrlKey || e.metaKey) 
+      ? true 
+      : window.confirm('Clear all pixels from this grid?');
+
+    if (!ok) return;
+
+    pixels.clear();
+    // make sure canvas updates immediately
+    ctx.clearRect(0, 0, c.width, c.height);
+    drawGrid();
+    saveLocal();
+    saveRemoteDebounced();
+
+    // tiny toast
+    msgEl.textContent = 'Cleared all pixels';
+    setTimeout(()=>{ msgEl.textContent=''; }, 1200);
   });
 
   // Add pixels
@@ -2958,14 +2976,22 @@ sheetsModal.addEventListener('click', (e)=>{
 
 
 /* ================= Startup ================= */
+/* ================= Startup ================= */
 window.addEventListener('DOMContentLoaded', ()=>{
   try{
     const urlParams = new URLSearchParams(location.search);
     const preCode = urlParams.get('server') || '';
     if(preCode){ serverInput.value = preCode; }
-  }catch(e){ console.error('Startup guard:', e); }
+
+    // 👇 auto-open the server modal on load
+    showServerModal();
+
+  }catch(e){
+    console.error('Startup guard:', e);
+  }
   updateSonarEnabled();
 });
+
 
 /* ================= Export KML / KMZ ================= */
 function escapeXml(s){return String(s).replace(/[<>&'"]/g,c=>({ '<':'&lt;','>':'&gt;','&':'&amp;',"'":'&apos;','"':'&quot;' }[c]));}
