@@ -488,6 +488,7 @@ a{color:var(--accent)}
         <span class="hint">Hide original geohashes layer(s)</span>
       </label>
       <div style="display:flex; gap:8px;">
+        <button id="geohash-clear" class="btn small danger" title="Clear both lists">Clear</button>
         <button id="geohash-apply" class="btn small">Apply</button>
         <button id="geohash-close" class="btn small">Close</button>
       </div>
@@ -544,16 +545,16 @@ const GEOHASH_PROJECT_ID = 'sqkii_mapper';
 // Expect a global `supabase` client already created earlier
 
 async function loadGeohashState() {
-  if (!window.supabase) return;
+  if (!window.supabase || !currentRoomCode) return;
   try {
     const { data, error } = await supabase
-      .from('geohash_overlays')
-      .select('lists, styles')
-      .eq('project_id', GEOHASH_PROJECT_ID)
+      .from('rooms')
+      .select('geohash_data')
+      .eq('code', currentRoomCode)
       .maybeSingle();
 
-    if (error || !data) return;
-    const { lists, styles } = data;
+    if (error || !data || !data.geohash_data) return;
+    const { lists, styles } = data.geohash_data;
 
     if (lists?.playable)   taPlayable.value   = lists.playable.join('\n');
     if (lists?.eliminated) taEliminated.value = lists.eliminated.join('\n');
@@ -582,11 +583,13 @@ function gh_dedupe(list) {
   return Array.from(new Set((list || []).map(s => String(s).trim()).filter(Boolean)));
 }
 function gh_sanitizeLists(playableText, eliminatedText) {
+  const splitSmart = (t) => String(t || '').split(/[,\s]+/).map(s=>s.trim()).filter(Boolean);
   return {
-    playable:   gh_dedupe(String(playableText || '').split(/\r?\n/)),
-    eliminated: gh_dedupe(String(eliminatedText || '').split(/\r?\n/))
+    playable:   gh_dedupe(splitSmart(playableText)),
+    eliminated: gh_dedupe(splitSmart(eliminatedText))
   };
 }
+
 function gh_sanitizeStyles(playFill, playFillOp, playStroke, playWidth,
                            elimFill, elimFillOp, elimStroke, elimWidth) {
   return {
@@ -606,26 +609,19 @@ let gh_queued = null;
 let gh_timer = null;
 
 async function gh_flush(projectId) {
-  if (!gh_queued || gh_inFlight) return;
+  if (!gh_queued || gh_inFlight || !currentRoomCode) return;
   gh_inFlight = true;
   const payload = gh_queued;
   gh_queued = null;
 
   try {
-    // Preferred: use the RPC from the SQL script
-    const { error } = await supabase.rpc('upsert_geohash_overlays', {
-      _project_id: projectId,
-      _lists: payload.lists,
-      _styles: payload.styles
-    });
-
-    // Fallback if you didn't add the RPC:
-    // const { error } = await supabase
-    //   .from('geohash_overlays')
-    //   .upsert(
-    //     { project_id: projectId, lists: payload.lists, styles: payload.styles, updated_at: new Date().toISOString() },
-    //     { onConflict: 'project_id' }
-    //   );
+    const { error } = await supabase
+      .from('rooms')
+      .update({ 
+        geohash_data: { lists: payload.lists, styles: payload.styles },
+        updated_at: new Date().toISOString() 
+      })
+      .eq('code', currentRoomCode);
 
     if (error) {
       console.error('[geohash save] failed:', error);
@@ -641,26 +637,28 @@ function queueGeohashSaveInline(projectId, playableText, eliminatedText,
   playFill, playFillOp, playStroke, playWidth,
   elimFill, elimFillOp, elimStroke, elimWidth) {
 
+  if (!currentRoomCode) return; // Can't save without a room
+
   const lists = gh_sanitizeLists(playableText, eliminatedText);
   const styles = gh_sanitizeStyles(
     playFill, playFillOp, playStroke, playWidth,
     elimFill, elimFillOp, elimStroke, elimWidth
   );
 
-  const sig = gh_sig(projectId, lists, styles);
+  const sig = gh_sig(currentRoomCode, lists, styles);
   if (sig === gh_lastSig) return; // no changes → no write
 
   gh_lastSig = sig;
   gh_queued = { lists, styles };
   clearTimeout(gh_timer);
-  gh_timer = setTimeout(() => gh_flush(projectId), GEOHASH_SAVE_DEBOUNCE_MS);
+  gh_timer = setTimeout(() => gh_flush(currentRoomCode), GEOHASH_SAVE_DEBOUNCE_MS);
 }
 
 async function saveGeohashState() {
-  if (!window.supabase) return;
+  if (!window.supabase || !currentRoomCode) return;
   try {
     queueGeohashSaveInline(
-      GEOHASH_PROJECT_ID,
+      currentRoomCode,
       taPlayable.value, taEliminated.value,
       playFill.value,  playFillOp.value,  playStroke.value,  playWidth.value,
       elimFill.value,  elimFillOp.value,  elimStroke.value,  elimWidth.value
@@ -670,8 +668,68 @@ async function saveGeohashState() {
   }
 }
 
+// --- Instant apply (debounced) on input/paste + style tweaks ---
+const ghDebounce = (fn, ms=450) => { let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; };
 
+// Safe apply for auto-events: only apply if source is present; no alert spam.
+const applyIfReady = () => {
+  try {
+    const src = (typeof findGeohashSourceId === 'function') ? findGeohashSourceId() : null;
+    if (!src) return;   // style not loaded yet; bail silently
+    if (!mapgl.getLayer('gh-play-fill')) ensureOverlayLayers(src);
+    // Reuse the existing lists & style logic
+    const playableArr   = Array.from(linesToSet(taPlayable.value));
+    const eliminatedArr = Array.from(linesToSet(taEliminated.value));
+    const playableFilter   = playableArr.length   ? anyFieldMatchExpr(playableArr)   : ['literal', false];
+    const eliminatedFilter = eliminatedArr.length ? anyFieldMatchExpr(eliminatedArr) : ['literal', false];
 
+    mapgl.setFilter('gh-play-fill', playableFilter);
+    mapgl.setFilter('gh-play-line', playableFilter);
+    mapgl.setFilter('gh-elim-fill', eliminatedFilter);
+    mapgl.setFilter('gh-elim-line', eliminatedFilter);
+
+    mapgl.setPaintProperty('gh-play-fill', 'fill-color', playFill.value || '#00ff66');
+    mapgl.setPaintProperty('gh-play-fill', 'fill-opacity', Number(playFillOp.value || 0.25));
+    mapgl.setPaintProperty('gh-play-line', 'line-color', playStroke.value || '#00ff66');
+    mapgl.setPaintProperty('gh-play-line', 'line-width', Number(playWidth.value || 1.5));
+
+    mapgl.setPaintProperty('gh-elim-fill', 'fill-color', elimFill.value || '#ff3355');
+    mapgl.setPaintProperty('gh-elim-fill', 'fill-opacity', Number(elimFillOp.value || 0.22));
+    mapgl.setPaintProperty('gh-elim-line', 'line-color', elimStroke.value || '#ff3355');
+    mapgl.setPaintProperty('gh-elim-line', 'line-width', Number(elimWidth.value || 1.2));
+
+    const baseIds = (typeof findGeohashBaseLayers === 'function') ? findGeohashBaseLayers() : [];
+    setLayerVisibility(baseIds, !hideBase.checked);
+  } catch(e) {
+    console.warn('applyIfReady error:', e);
+  }
+};
+
+const autoApply = ghDebounce(() => { applyIfReady(); saveGeohashState(); }, 500);
+
+// Textareas: react to typing and paste (comma/newline both supported by parser)
+[taPlayable, taEliminated].forEach(el => {
+  el.addEventListener('input', autoApply, { passive: true });
+  el.addEventListener('paste', () => setTimeout(autoApply, 0), { passive: true });
+});
+
+// Style controls: live preview + autosave
+[playFill, playFillOp, playStroke, playWidth, elimFill, elimFillOp, elimStroke, elimWidth].forEach(el => {
+  el.addEventListener('input', autoApply, { passive: true });
+  el.addEventListener('change', autoApply, { passive: true });
+});
+
+// Clear button
+document.getElementById('geohash-clear')?.addEventListener('click', () => {
+  taPlayable.value   = '';
+  taEliminated.value = '';
+  autoApply();
+});
+
+// --- autosave on input (debounced) ---
+const autoSave = (()=>{ let t; return ()=>{ clearTimeout(t); t=setTimeout(saveGeohashState, 500); }; })();
+[taPlayable, taEliminated, playFill, playFillOp, playStroke, playWidth, elimFill, elimFillOp, elimStroke, elimWidth]
+  .forEach(el => el?.addEventListener('input', autoSave, { passive:true }));
 
 
   // ===== Modal helpers =====
@@ -683,7 +741,28 @@ async function saveGeohashState() {
   modal?.addEventListener('click', e => { if (e.target === modal) closeModal(); });
 
   // ===== Utility =====
-  const linesToSet = (text) => new Set((text||'').split(/\r?\n/).map(s=>s.trim()).filter(Boolean));
+  // Accept comma, spaces and newlines. Keeps only tokens that look like geohash_id.
+  const linesToSet = (text) => {
+    // geohash (base32: 0-9, b-h, j-k, m-n, p-z) with optional _0/_1 suffix; length 3–12
+    const GID_RE = /^(?:[0-9b-hjkmnp-z]{3,12})(?:_[01])?$/i;
+
+    const raw = String(text || '')
+      .replace(/[;]+/g, ',')   // treat semicolons like commas
+      .replace(/\s+/g, ' ')    // collapse whitespace
+      .replace(/,+/g, ',');    // collapse consecutive commas
+
+    const tokens = raw.split(/[,\s]+/); // split by comma OR whitespace
+
+    const out = new Set();
+    for (let t of tokens) {
+      t = t.trim();
+      if (!t) continue;
+      t = t.toLowerCase();      // normalize
+      if (GID_RE.test(t)) out.add(t); // keep only valid geohash[_flag]
+    }
+    return out;
+  };
+
   const anyFieldMatchExpr = (idsArray) => {
     // Build an expression: ["any", ["match", ["get","geohash"], ["id1","id2"], true, false], ["match", ["get","name"], ...], ...]
     const expr = ['any'];
@@ -719,6 +798,8 @@ async function saveGeohashState() {
     }
     return null;
   }
+
+  
 
   // ===== Build or update overlay layers =====
   function ensureOverlayLayers(sourceId) {
@@ -784,6 +865,27 @@ async function saveGeohashState() {
     apply();            // updates the map layers
     saveGeohashState(); // persists lists + styles
   });
+
+// --- Expose applyIfReady globally so joinRoom can use it ---
+  window.applyGeohashOverlays = applyIfReady;
+
+  // --- Auto-apply on initial page load (for 'Continue without sync') ---
+  (async function initGeohashes() {
+    // Only run if NOT joining a room (room will handle it)
+    if (!window.currentRoomCode) {
+      await loadGeohashState();
+      glReady(() => {
+        setTimeout(() => {
+          try { 
+            applyIfReady();
+            console.log('✓ Geohash overlays auto-applied on load (local mode)');
+          } catch(e) { 
+            console.warn('geohash auto-apply on load failed:', e); 
+          }
+        }, 500);
+      });
+    }
+  })();
 
   // Optional: prefill example
   document.addEventListener('DOMContentLoaded', () => {
@@ -2886,6 +2988,44 @@ async function joinRoom(code){
         const who = existing.pixelgrid_updated_by || existing.updated_by;
         try { window.PixelGrid.applyRemote(existing.pixelgrid, who); } catch {}
       }
+
+      // Load and apply geohash overlays
+      if (existing && existing.geohash_data) {
+        try {
+          await loadGeohashState();
+          console.log('Geohash state loaded from database');
+          
+          // Wait longer for the geohash KMZ to fully load and create its source
+          glReady(() => {
+            // Try multiple times with increasing delays
+            let attempts = 0;
+            const maxAttempts = 5;
+            
+            const tryApply = () => {
+              attempts++;
+              const sourceId = (typeof findGeohashSourceId === 'function') ? findGeohashSourceId() : null;
+              
+              if (sourceId) {
+                console.log('✓ Geohash source found:', sourceId);
+                if (typeof window.applyGeohashOverlays === 'function') {
+                  window.applyGeohashOverlays();
+                  console.log('✓ Geohash overlays auto-applied after joining room');
+                }
+              } else if (attempts < maxAttempts) {
+                console.log(`Geohash source not ready yet, retry ${attempts}/${maxAttempts}...`);
+                setTimeout(tryApply, 1000); // Wait 1 second between attempts
+              } else {
+                console.warn('Geohash source not found after', maxAttempts, 'attempts. You may need to click Apply manually.');
+              }
+            };
+            
+            // Start first attempt after 1.5 seconds
+            setTimeout(tryApply, 1500);
+          });
+        } catch (e) {
+          console.warn('Geohash auto-load failed:', e);
+        }
+      }
     } else {
       // No shared state yet — start a fresh room with your preload flow
       clearAllLayers();
@@ -3415,7 +3555,6 @@ const RESEED_EVERY_SEC=0;            // e.g., 60 to reseed each minute
 
 /* ===== DO NOT EDIT BELOW (minified) ===== */
 (function(){const c=document.getElementById('darkveil');if(!c)return;c.style.opacity=".5";const gl=c.getContext('webgl',{alpha:!0,premultipliedAlpha:!1})||c.getContext('experimental-webgl');if(!gl){console.warn('DarkVeil fallback');return}const VS='attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}';const FS='precision mediump float;uniform vec2 r;uniform float t,B,n,s,f,W,ang,seed;uniform float rw;uniform vec3 Cb,Lp,Dp;uniform vec4 A1,A2,A3;uniform vec3 J;uniform float jdir;float rnd(vec2 p){return fract(sin(dot(p,vec2(12.9898,78.233))+seed)*43758.5453);}float n1(vec2 p){vec2 i=floor(p),f=fract(p);vec2 u=f*f*(3.0-2.0*f);float a=rnd(i),b=rnd(i+vec2(1.,0.)),c=rnd(i+vec2(0.,1.)),d=rnd(i+vec2(1.,1.));return mix(mix(a,b,u.x),mix(c,d,u.x),u.y);}vec2 warpN(vec2 p){vec2 g=vec2(n1(p*1.1+seed),n1(p*1.3-seed));return p+rw*(g-0.5);}vec2 warpS(vec2 p){return p+W*vec2(sin(2.1*p.y+0.9*t),cos(2.0*p.x-0.7*t));}float tri(float x){return 1.0-abs(fract(x)-0.5)*2.0;}float band(vec2 p,vec2 d,float freq,float width,float off,float k){p=warpS(warpN(p));float tf=t*mix(1.0,1.6,k);float jf=n1(p*1.2+tf*0.37+seed)-0.5;float jw=n1(p*1.5-tf*0.29-seed)-0.5;float jo=n1(p*0.9+tf*0.41+seed*0.5)-0.5;float F=freq*(1.0+J.x*jf),W=clamp(width*(1.0+J.y*jw),0.05,0.95),O=off+J.z*jo;float x=dot(p,d)*F - tf + O;float v=tri(x);return smoothstep(1.0-W,1.0,v);}void main(){vec2 uv=(gl_FragCoord.xy/r)*2.-1.;uv.y*=-1.;float asp=r.x/r.y;vec2 p=vec2(uv.x*asp,uv.y);float a=ang + jdir*(n1(vec2(ang*0.17,ang*0.23)+seed)-0.5);vec2 d=normalize(vec2(cos(a),sin(a)));vec3 col=Cb;float m1=band(p,d,A1.z,A1.y,A1.w,0.25);float m2=band(p,d,A2.z,A2.y,A2.w,0.55);float m3=band(p,d,A3.z,A3.y,A3.w,0.85);col=mix(col,Lp,clamp(m1*A1.x,0.,1.));col=mix(col,Dp,clamp(m2*A2.x,0.,1.));col=mix(col,vec3(0.),clamp(m3*A3.x,0.,1.));col*=B;col=pow(col,vec3(0.92));float sl=sin(gl_FragCoord.y*f)*.5+.5;col*=1.-(sl*sl)*s;col+=(rnd(gl_FragCoord.xy+t)-.5)*n*.8;gl_FragColor=vec4(clamp(col,0.,1.),1.);}';function S(t,s){const x=gl.createShader(t);gl.shaderSource(x,s);gl.compileShader(x);return x}const pr=gl.createProgram();gl.attachShader(pr,S(gl.VERTEX_SHADER,VS));gl.attachShader(pr,S(gl.FRAGMENT_SHADER,FS));gl.linkProgram(pr);gl.useProgram(pr);const b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);const a=gl.getAttribLocation(pr,'p');gl.enableVertexAttribArray(a);gl.vertexAttribPointer(a,2,gl.FLOAT,!1,0,0);const uR=gl.getUniformLocation(pr,'r'),uT=gl.getUniformLocation(pr,'t'),uA=gl.getUniformLocation(pr,'ang');const uSeed=gl.getUniformLocation(pr,'seed');gl.uniform1f(gl.getUniformLocation(pr,'B'),BRIGHTNESS);gl.uniform1f(gl.getUniformLocation(pr,'n'),NOISE);gl.uniform1f(gl.getUniformLocation(pr,'s'),SCAN_S);gl.uniform1f(gl.getUniformLocation(pr,'f'),SCAN_F);gl.uniform1f(gl.getUniformLocation(pr,'W'),WARP);gl.uniform1f(gl.getUniformLocation(pr,'rw'),RAND_WARP);gl.uniform3f(gl.getUniformLocation(pr,'Cb'),BASE_PURPLE[0],BASE_PURPLE[1],BASE_PURPLE[2]);gl.uniform3f(gl.getUniformLocation(pr,'Lp'),ACC_LIGHT[0],ACC_LIGHT[1],ACC_LIGHT[2]);gl.uniform3f(gl.getUniformLocation(pr,'Dp'),ACC_DARK[0],ACC_DARK[1],ACC_DARK[2]);gl.uniform4f(gl.getUniformLocation(pr,'A1'),STR1,WIDTH1,FREQ1,OFF1);gl.uniform4f(gl.getUniformLocation(pr,'A2'),STR2,WIDTH2,FREQ2,OFF2);gl.uniform4f(gl.getUniformLocation(pr,'A3'),STR3,WIDTH3,FREQ3,OFF3);gl.uniform3f(gl.getUniformLocation(pr,'J'),JIT_FREQ,JIT_WIDTH,JIT_OFFSET);gl.uniform1f(gl.getUniformLocation(pr,'jdir'),JIT_DIR);const rs=()=>{const w=(c.parentElement?.clientWidth||c.width)|0,h=(c.parentElement?.clientHeight||c.height)|0,W=(w*RES_SCALE)|0,H=(h*RES_SCALE)|0;if(c.width!==W||c.height!==H){c.width=Math.max(1,W);c.height=Math.max(1,H);gl.viewport(0,0,c.width,c.height)}gl.uniform2f(uR,c.width,c.height)};addEventListener('resize',rs,{passive:!0});rs();let st=performance.now(),raf,lastSeed=RAND_SEED,seed=lastSeed,seedAt=0;(function loop(){const now=(performance.now()-st)/1e3;gl.uniform1f(uT,now*SPEED);gl.uniform1f(uA,now*ANGLE_SPEED);if(RESEED_EVERY_SEC>0&&(now-seedAt)>RESEED_EVERY_SEC){seedAt=now;seed=Math.random()*1000;}gl.uniform1f(uSeed,seed);gl.drawArrays(gl.TRIANGLES,0,3);raf=requestAnimationFrame(loop)})();document.addEventListener('visibilitychange',()=>{if(document.hidden)cancelAnimationFrame(raf);else{st=performance.now();(function loop(){const now=(performance.now()-st)/1e3;gl.uniform1f(uT,now*SPEED);gl.uniform1f(uA,now*ANGLE_SPEED);gl.uniform1f(uSeed,seed);gl.drawArrays(gl.TRIANGLES,0,3);raf=requestAnimationFrame(loop)})()}})})();
-
 
 
 </script>
