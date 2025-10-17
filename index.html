@@ -2079,8 +2079,23 @@ function addKmlText(text,filename,opts,forceGroupName){
       const f = gj.features[idx], m = metaList[idx], fid = String(featureSeq++);
       const props=f.properties||{}; const itemName=m.name||props.name||props.Name||props.title||('Feature '+fid);
 
-      // Force default style: white fill + white outline @ 20% opacity
-      const style={ _fill:'#ffffff', _fillOpacity:0.15, _stroke:'#ffffff', _strokeOpacity:0.7, _weight:2 };
+      let style = { _fill:'#ffffff', _fillOpacity:0.15, _stroke:'#ffffff', _strokeOpacity:0.7, _weight:2 };
+      if (m && m.style) {
+        if (m.style.polyColor) {
+          const { hex, opacity } = kmlColorToCss(m.style.polyColor);  // aabbggrr -> #rrggbb + 0..1
+          style._fill = hex;
+          style._fillOpacity = opacity;
+        }
+        if (m.style.lineColor) {
+          const { hex, opacity } = kmlColorToCss(m.style.lineColor);
+          style._stroke = hex;
+          style._strokeOpacity = opacity;
+        }
+        if (m.style.lineWidth) {
+          const w = parseFloat(m.style.lineWidth);
+          if (isFinite(w)) style._weight = w;
+        }
+      }
 
       let iconName=DOLLAR_ICON_NAME, iconUrl='';
       const iconHref=m.style.iconHref;
