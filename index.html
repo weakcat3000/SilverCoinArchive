@@ -535,79 +535,143 @@ a{color:var(--accent)}
   const elimStroke = document.getElementById('gh-elim-stroke');
   const elimWidth  = document.getElementById('gh-elim-width');
 
-  // ---- Supabase persistence (project-scoped) ----
-  // Change this to your map/room slug if needed
-  const GEOHASH_PROJECT_ID = 'sqkii_mapper';
 
-  // Expect a global `supabase` client already created somewhere earlier:
-  // const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-  async function loadGeohashState() {
-    if (!window.supabase) return;
-    try {
-      const { data, error } = await supabase
-        .from('geohash_overlays')
-        .select('lists, styles')
-        .eq('project_id', GEOHASH_PROJECT_ID)
-        .maybeSingle();
 
-      if (error || !data) return;
+// ---- Supabase persistence (project-scoped) ----
+const GEOHASH_PROJECT_ID = 'sqkii_mapper';
 
-      const { lists, styles } = data;
+// Expect a global `supabase` client already created earlier
 
-      // hydrate UI (keeps whatever DOM ids you already have)
-      if (lists?.playable)   taPlayable.value   = lists.playable.join('\n');
-      if (lists?.eliminated) taEliminated.value = lists.eliminated.join('\n');
+async function loadGeohashState() {
+  if (!window.supabase) return;
+  try {
+    const { data, error } = await supabase
+      .from('geohash_overlays')
+      .select('lists, styles')
+      .eq('project_id', GEOHASH_PROJECT_ID)
+      .maybeSingle();
 
-      if (styles?.play) {
-        if (styles.play.fill        != null) playFill.value   = styles.play.fill;
-        if (styles.play.fillOpacity != null) playFillOp.value = styles.play.fillOpacity;
-        if (styles.play.stroke      != null) playStroke.value = styles.play.stroke;
-        if (styles.play.width       != null) playWidth.value  = styles.play.width;
-      }
-      if (styles?.elim) {
-        if (styles.elim.fill        != null) elimFill.value   = styles.elim.fill;
-        if (styles.elim.fillOpacity != null) elimFillOp.value = styles.elim.fillOpacity;
-        if (styles.elim.stroke      != null) elimStroke.value = styles.elim.stroke;
-        if (styles.elim.width       != null) elimWidth.value  = styles.elim.width;
-      }
-    } catch (e) {
-      console.warn('loadGeohashState error:', e);
+    if (error || !data) return;
+    const { lists, styles } = data;
+
+    if (lists?.playable)   taPlayable.value   = lists.playable.join('\n');
+    if (lists?.eliminated) taEliminated.value = lists.eliminated.join('\n');
+
+    if (styles?.play) {
+      if (styles.play.fill        != null) playFill.value   = styles.play.fill;
+      if (styles.play.fillOpacity != null) playFillOp.value = styles.play.fillOpacity;
+      if (styles.play.stroke      != null) playStroke.value = styles.play.stroke;
+      if (styles.play.width       != null) playWidth.value  = styles.play.width;
     }
-  }
-
-  async function saveGeohashState() {
-    if (!window.supabase) return;
-    try {
-      const lists = {
-        playable:   taPlayable.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean),
-        eliminated: taEliminated.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean),
-      };
-      const styles = {
-        play: {
-          fill:        playFill.value,
-          fillOpacity: Number(playFillOp.value),
-          stroke:      playStroke.value,
-          width:       Number(playWidth.value),
-        },
-        elim: {
-          fill:        elimFill.value,
-          fillOpacity: Number(elimFillOp.value),
-          stroke:      elimStroke.value,
-          width:       Number(elimWidth.value),
-        }
-      };
-
-      await supabase
-        .from('geohash_overlays')
-        .upsert(
-          { project_id: GEOHASH_PROJECT_ID, lists, styles, updated_at: new Date().toISOString() },
-          { onConflict: 'project_id,profile_id' }
-        );
-    } catch (e) {
-      console.warn('saveGeohashState error:', e);
+    if (styles?.elim) {
+      if (styles.elim.fill        != null) elimFill.value   = styles.elim.fill;
+      if (styles.elim.fillOpacity != null) elimFillOp.value = styles.elim.fillOpacity;
+      if (styles.elim.stroke      != null) elimStroke.value = styles.elim.stroke;
+      if (styles.elim.width       != null) elimWidth.value  = styles.elim.width;
     }
+  } catch (e) {
+    console.warn('loadGeohashState error:', e);
   }
+}
+
+// === Geohash save queue + sanitizers (single copy) ===
+const GEOHASH_SAVE_DEBOUNCE_MS = 500;
+
+function gh_dedupe(list) {
+  return Array.from(new Set((list || []).map(s => String(s).trim()).filter(Boolean)));
+}
+function gh_sanitizeLists(playableText, eliminatedText) {
+  return {
+    playable:   gh_dedupe(String(playableText || '').split(/\r?\n/)),
+    eliminated: gh_dedupe(String(eliminatedText || '').split(/\r?\n/))
+  };
+}
+function gh_sanitizeStyles(playFill, playFillOp, playStroke, playWidth,
+                           elimFill, elimFillOp, elimStroke, elimWidth) {
+  return {
+    play: { fill: playFill,  fillOpacity: Number(playFillOp),  stroke: playStroke,  width: Number(playWidth) },
+    elim: { fill: elimFill,  fillOpacity: Number(elimFillOp),  stroke: elimStroke,  width: Number(elimWidth) }
+  };
+}
+function gh_sig(projectId, lists, styles) {
+  const s = JSON.stringify([projectId, lists, styles]);
+  let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return `${projectId}:${h}`;
+}
+
+let gh_lastSig = '';
+let gh_inFlight = false;
+let gh_queued = null;
+let gh_timer = null;
+
+async function gh_flush(projectId) {
+  if (!gh_queued || gh_inFlight) return;
+  gh_inFlight = true;
+  const payload = gh_queued;
+  gh_queued = null;
+
+  try {
+    // Preferred: use the RPC from the SQL script
+    const { error } = await supabase.rpc('upsert_geohash_overlays', {
+      _project_id: projectId,
+      _lists: payload.lists,
+      _styles: payload.styles
+    });
+
+    // Fallback if you didn't add the RPC:
+    // const { error } = await supabase
+    //   .from('geohash_overlays')
+    //   .upsert(
+    //     { project_id: projectId, lists: payload.lists, styles: payload.styles, updated_at: new Date().toISOString() },
+    //     { onConflict: 'project_id' }
+    //   );
+
+    if (error) {
+      console.error('[geohash save] failed:', error);
+      setTimeout(() => { gh_queued = payload; gh_flush(projectId); }, 2000);
+    }
+  } finally {
+    gh_inFlight = false;
+    if (gh_queued) gh_flush(projectId);
+  }
+}
+
+function queueGeohashSaveInline(projectId, playableText, eliminatedText,
+  playFill, playFillOp, playStroke, playWidth,
+  elimFill, elimFillOp, elimStroke, elimWidth) {
+
+  const lists = gh_sanitizeLists(playableText, eliminatedText);
+  const styles = gh_sanitizeStyles(
+    playFill, playFillOp, playStroke, playWidth,
+    elimFill, elimFillOp, elimStroke, elimWidth
+  );
+
+  const sig = gh_sig(projectId, lists, styles);
+  if (sig === gh_lastSig) return; // no changes → no write
+
+  gh_lastSig = sig;
+  gh_queued = { lists, styles };
+  clearTimeout(gh_timer);
+  gh_timer = setTimeout(() => gh_flush(projectId), GEOHASH_SAVE_DEBOUNCE_MS);
+}
+
+async function saveGeohashState() {
+  if (!window.supabase) return;
+  try {
+    queueGeohashSaveInline(
+      GEOHASH_PROJECT_ID,
+      taPlayable.value, taEliminated.value,
+      playFill.value,  playFillOp.value,  playStroke.value,  playWidth.value,
+      elimFill.value,  elimFillOp.value,  elimStroke.value,  elimWidth.value
+    );
+  } catch (e) {
+    console.warn('saveGeohashState error:', e);
+  }
+}
+
+
+
 
 
   // ===== Modal helpers =====
