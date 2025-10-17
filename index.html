@@ -264,13 +264,15 @@ a{color:var(--accent)}
         <button id="audio-toggle" class="icon-btn" title="Audio on/off">...</button>
       </div>
 
-      <!-- NEW: header toolbar with Edit toggle -->
       <div class="toolbar">
         <button id="edit-toggle" class="btn small" title="Toggle edit mode">Edit: OFF</button>
-        <!-- NEW: opens the Pixel Grid modal -->
+
+        <!-- Geohashes button (move it here so it's visible in the header) -->
+        <button id="geohash-open" class="btn small" title="Open Geohashes Editor">Geohashes</button>
+
+        <!-- Pixel Grid button -->
         <button id="pixelgrid-open" class="btn small" title="Open Pixel Grid">Pixel Grid</button>
       </div>
-
 
       <button id="ui-hide" class="ui-hide" title="Hide UI">Hide UI</button>
     </div>
@@ -405,6 +407,7 @@ a{color:var(--accent)}
   <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
 </button>
 
+
 <button id="pixelgrid-fab" title="Open Pixel Grid" aria-label="Open Pixel Grid">
   <svg viewBox="0 0 24 24">
     <rect x="3" y="3" width="18" height="18" rx="2"></rect>
@@ -441,6 +444,299 @@ a{color:var(--accent)}
     <div id="sheets-error" class="err"></div>
   </div>
 </div>
+
+<!-- ===== Geohashes Editor (no upload; edits existing layer) ===== -->
+<div id="geohash-modal" class="modal">
+  <div class="modal-card" style="max-width:980px;width:96%;">
+    <h3 style="margin-bottom:8px">Geohashes Editor</h3>
+    <small class="hint">Type geohash IDs (one per line). Left = playable, Right = eliminated.</small>
+
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-top:12px;">
+      <div>
+        <div class="hint" style="margin-bottom:4px;">Playable geohashes</div>
+        <textarea id="geohash-playable" placeholder="w21zw4_1&#10;w238pc_0&#10;w21xq6_1&#10;w21z4p_0"
+          style="width:100%; min-height:260px; padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--panel-2); color:var(--text); font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;"></textarea>
+      </div>
+      <div>
+        <div class="hint" style="margin-bottom:4px;">Eliminated geohashes</div>
+        <textarea id="geohash-eliminated" placeholder="w21xqp_0&#10;w21zkw_1&#10;w21zv5_1&#10;w21z90_1"
+          style="width:100%; min-height:260px; padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--panel-2); color:var(--text); font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;"></textarea>
+      </div>
+    </div>
+
+    <!-- Style controls -->
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-top:12px;">
+      <div class="style-editor-like" style="border:1px solid var(--border); border-radius:12px; padding:10px;">
+        <h4 style="margin:0 0 8px 0; font-size:14px;">Playable style</h4>
+        <div class="style-row"><label>Fill</label><input id="gh-play-fill" type="color" value="#00ff66"></div>
+        <div class="style-row"><label>Fill Opacity</label><input id="gh-play-fillop" type="range" min="0" max="1" step="0.05" value="0.25"></div>
+        <div class="style-row"><label>Stroke</label><input id="gh-play-stroke" type="color" value="#00ff66"></div>
+        <div class="style-row"><label>Width</label><input id="gh-play-width" type="number" min="0" max="20" step="0.5" value="1.5"></div>
+      </div>
+      <div class="style-editor-like" style="border:1px solid var(--border); border-radius:12px; padding:10px;">
+        <h4 style="margin:0 0 8px 0; font-size:14px;">Eliminated style</h4>
+        <div class="style-row"><label>Fill</label><input id="gh-elim-fill" type="color" value="#ff3355"></div>
+        <div class="style-row"><label>Fill Opacity</label><input id="gh-elim-fillop" type="range" min="0" max="1" step="0.05" value="0.22"></div>
+        <div class="style-row"><label>Stroke</label><input id="gh-elim-stroke" type="color" value="#ff3355"></div>
+        <div class="style-row"><label>Width</label><input id="gh-elim-width" type="number" min="0" max="20" step="0.5" value="1.2"></div>
+      </div>
+    </div>
+
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:12px;">
+      <label style="display:flex; gap:8px; align-items:center;">
+        <input id="gh-hide-base" type="checkbox" checked>
+        <span class="hint">Hide original geohashes layer(s)</span>
+      </label>
+      <div style="display:flex; gap:8px;">
+        <button id="geohash-apply" class="btn small">Apply</button>
+        <button id="geohash-close" class="btn small">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+/* ===================== Geohashes Editor — Uses existing source ===================== */
+(() => {
+  // ===== CONFIG (set manually if you already know them) =====
+  // If you know the exact layer IDs for your existing geohash fill/line layers, set here:
+  const KNOWN_BASE_LAYER_IDS = []; // e.g., ['geohashes-fill','geohashes-outline']
+  // If you know the GeoJSON source id used by those layers, set here (else auto-detect):
+  const KNOWN_SOURCE_ID = ''; // e.g., 'geohashes-src'
+
+  // Fields to check for an id like "w21zw4_1"
+  const CANDIDATE_FIELDS = ['geohash','name','id','description'];
+
+  // New overlay layer ids (do not clash with yours)
+  const GL_LYR_PLAY_FILL = 'gh-play-fill';
+  const GL_LYR_PLAY_LINE = 'gh-play-line';
+  const GL_LYR_ELIM_FILL = 'gh-elim-fill';
+  const GL_LYR_ELIM_LINE = 'gh-elim-line';
+
+  // ===== Elements =====
+  const openBtn = document.getElementById('geohash-open');
+  const modal   = document.getElementById('geohash-modal');
+  const closeBtn= document.getElementById('geohash-close');
+  const applyBtn= document.getElementById('geohash-apply');
+  const hideBase= document.getElementById('gh-hide-base');
+  const appEl   = document.getElementById('app');
+
+  const taPlayable   = document.getElementById('geohash-playable');
+  const taEliminated = document.getElementById('geohash-eliminated');
+
+  const playFill   = document.getElementById('gh-play-fill');
+  const playFillOp = document.getElementById('gh-play-fillop');
+  const playStroke = document.getElementById('gh-play-stroke');
+  const playWidth  = document.getElementById('gh-play-width');
+
+  const elimFill   = document.getElementById('gh-elim-fill');
+  const elimFillOp = document.getElementById('gh-elim-fillop');
+  const elimStroke = document.getElementById('gh-elim-stroke');
+  const elimWidth  = document.getElementById('gh-elim-width');
+
+  // ---- Supabase persistence (project-scoped) ----
+  // Change this to your map/room slug if needed
+  const GEOHASH_PROJECT_ID = 'sqkii_mapper';
+
+  // Expect a global `supabase` client already created somewhere earlier:
+  // const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  async function loadGeohashState() {
+    if (!window.supabase) return;
+    try {
+      const { data, error } = await supabase
+        .from('geohash_overlays')
+        .select('lists, styles')
+        .eq('project_id', GEOHASH_PROJECT_ID)
+        .maybeSingle();
+
+      if (error || !data) return;
+
+      const { lists, styles } = data;
+
+      // hydrate UI (keeps whatever DOM ids you already have)
+      if (lists?.playable)   taPlayable.value   = lists.playable.join('\n');
+      if (lists?.eliminated) taEliminated.value = lists.eliminated.join('\n');
+
+      if (styles?.play) {
+        if (styles.play.fill        != null) playFill.value   = styles.play.fill;
+        if (styles.play.fillOpacity != null) playFillOp.value = styles.play.fillOpacity;
+        if (styles.play.stroke      != null) playStroke.value = styles.play.stroke;
+        if (styles.play.width       != null) playWidth.value  = styles.play.width;
+      }
+      if (styles?.elim) {
+        if (styles.elim.fill        != null) elimFill.value   = styles.elim.fill;
+        if (styles.elim.fillOpacity != null) elimFillOp.value = styles.elim.fillOpacity;
+        if (styles.elim.stroke      != null) elimStroke.value = styles.elim.stroke;
+        if (styles.elim.width       != null) elimWidth.value  = styles.elim.width;
+      }
+    } catch (e) {
+      console.warn('loadGeohashState error:', e);
+    }
+  }
+
+  async function saveGeohashState() {
+    if (!window.supabase) return;
+    try {
+      const lists = {
+        playable:   taPlayable.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean),
+        eliminated: taEliminated.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean),
+      };
+      const styles = {
+        play: {
+          fill:        playFill.value,
+          fillOpacity: Number(playFillOp.value),
+          stroke:      playStroke.value,
+          width:       Number(playWidth.value),
+        },
+        elim: {
+          fill:        elimFill.value,
+          fillOpacity: Number(elimFillOp.value),
+          stroke:      elimStroke.value,
+          width:       Number(elimWidth.value),
+        }
+      };
+
+      await supabase
+        .from('geohash_overlays')
+        .upsert(
+          { project_id: GEOHASH_PROJECT_ID, lists, styles, updated_at: new Date().toISOString() },
+          { onConflict: 'project_id,profile_id' }
+        );
+    } catch (e) {
+      console.warn('saveGeohashState error:', e);
+    }
+  }
+
+
+  // ===== Modal helpers =====
+  const openModal = () => { modal.classList.add('visible'); appEl?.classList.add('blocked-by-modal'); };
+  const closeModal = () => { modal.classList.remove('visible'); appEl?.classList.remove('blocked-by-modal'); };
+  openBtn?.addEventListener('click', openModal);
+  closeBtn?.addEventListener('click', closeModal);
+  openBtn?.addEventListener('click', loadGeohashState);
+  modal?.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+
+  // ===== Utility =====
+  const linesToSet = (text) => new Set((text||'').split(/\r?\n/).map(s=>s.trim()).filter(Boolean));
+  const anyFieldMatchExpr = (idsArray) => {
+    // Build an expression: ["any", ["match", ["get","geohash"], ["id1","id2"], true, false], ["match", ["get","name"], ...], ...]
+    const expr = ['any'];
+    for (const field of CANDIDATE_FIELDS) {
+      expr.push(['match', ['coalesce',['to-string',['get', field]], ''], idsArray, true, false]);
+    }
+    return expr;
+  };
+  function setLayerVisibility(ids, visible) {
+    (ids||[]).forEach(id => {
+      if (!mapgl.getLayer(id)) return;
+      mapgl.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
+    });
+  }
+  function findGeohashBaseLayers() {
+    if (KNOWN_BASE_LAYER_IDS.length) return KNOWN_BASE_LAYER_IDS.filter(id => mapgl.getLayer(id));
+    const layers = mapgl.getStyle().layers || [];
+    // Heuristic: any layer id containing 'geohash'
+    return layers.filter(l => /geohash/i.test(l.id)).map(l => l.id);
+  }
+  function findGeohashSourceId() {
+    if (KNOWN_SOURCE_ID && mapgl.getSource(KNOWN_SOURCE_ID)) return KNOWN_SOURCE_ID;
+    const baseLayers = findGeohashBaseLayers();
+    for (const lid of baseLayers) {
+      const lyr = mapgl.getLayer(lid);
+      if (lyr && lyr.source && mapgl.getSource(lyr.source)) return lyr.source;
+    }
+    // fallback: first geojson source in style
+    const style = mapgl.getStyle();
+    for (const k in style.sources) {
+      const s = style.sources[k];
+      if (s.type === 'geojson') return k;
+    }
+    return null;
+  }
+
+  // ===== Build or update overlay layers =====
+  function ensureOverlayLayers(sourceId) {
+    // Remove if exist (we rebuild cleanly)
+    [GL_LYR_PLAY_LINE, GL_LYR_PLAY_FILL, GL_LYR_ELIM_LINE, GL_LYR_ELIM_FILL].forEach(id => {
+      try { if (mapgl.getLayer(id)) mapgl.removeLayer(id); } catch {}
+    });
+
+    // Create with default filters; we'll set them in apply()
+    mapgl.addLayer({ id: GL_LYR_PLAY_FILL, type: 'fill', source: sourceId, paint: { 'fill-color': '#00ff66', 'fill-opacity': 0.25 }, filter: ['literal', false] });
+    mapgl.addLayer({ id: GL_LYR_PLAY_LINE, type: 'line', source: sourceId, paint: { 'line-color': '#00ff66', 'line-width': 1.5, 'line-opacity': 1 }, filter: ['literal', false] });
+
+    mapgl.addLayer({ id: GL_LYR_ELIM_FILL, type: 'fill', source: sourceId, paint: { 'fill-color': '#ff3355', 'fill-opacity': 0.22 }, filter: ['literal', false] });
+    mapgl.addLayer({ id: GL_LYR_ELIM_LINE, type: 'line', source: sourceId, paint: { 'line-color': '#ff3355', 'line-width': 1.2, 'line-opacity': 1 }, filter: ['literal', false] });
+
+    // Keep overlays above base layers
+    const topId = findGeohashBaseLayers()[0] || null;
+    if (topId) {
+      try { mapgl.moveLayer(GL_LYR_PLAY_FILL, topId); mapgl.moveLayer(GL_LYR_PLAY_LINE, GL_LYR_PLAY_FILL);
+            mapgl.moveLayer(GL_LYR_ELIM_FILL, GL_LYR_PLAY_LINE); mapgl.moveLayer(GL_LYR_ELIM_LINE, GL_LYR_ELIM_FILL); } catch {}
+    }
+  }
+
+  // ===== Apply from UI =====
+  function apply() {
+    const sourceId = findGeohashSourceId();
+    if (!sourceId) { alert('Could not find the existing Geohashes source. Set KNOWN_SOURCE_ID at top.'); return; }
+
+    // Create overlay layers if missing
+    if (!mapgl.getLayer(GL_LYR_PLAY_FILL)) ensureOverlayLayers(sourceId);
+
+    // Lists
+    const playableArr   = Array.from(linesToSet(taPlayable.value));
+    const eliminatedArr = Array.from(linesToSet(taEliminated.value));
+
+    // Filters: match any candidate field against the list
+    const playableFilter   = playableArr.length   ? anyFieldMatchExpr(playableArr)   : ['literal', false];
+    const eliminatedFilter = eliminatedArr.length ? anyFieldMatchExpr(eliminatedArr) : ['literal', false];
+
+    // Set filters
+    mapgl.setFilter(GL_LYR_PLAY_FILL, playableFilter);
+    mapgl.setFilter(GL_LYR_PLAY_LINE, playableFilter);
+    mapgl.setFilter(GL_LYR_ELIM_FILL, eliminatedFilter);
+    mapgl.setFilter(GL_LYR_ELIM_LINE, eliminatedFilter);
+
+    // Styles
+    mapgl.setPaintProperty(GL_LYR_PLAY_FILL, 'fill-color', playFill.value || '#00ff66');
+    mapgl.setPaintProperty(GL_LYR_PLAY_FILL, 'fill-opacity', Number(playFillOp.value || 0.25));
+    mapgl.setPaintProperty(GL_LYR_PLAY_LINE, 'line-color', playStroke.value || '#00ff66');
+    mapgl.setPaintProperty(GL_LYR_PLAY_LINE, 'line-width', Number(playWidth.value || 1.5));
+
+    mapgl.setPaintProperty(GL_LYR_ELIM_FILL, 'fill-color', elimFill.value || '#ff3355');
+    mapgl.setPaintProperty(GL_LYR_ELIM_FILL, 'fill-opacity', Number(elimFillOp.value || 0.22));
+    mapgl.setPaintProperty(GL_LYR_ELIM_LINE, 'line-color', elimStroke.value || '#ff3355');
+    mapgl.setPaintProperty(GL_LYR_ELIM_LINE, 'line-width', Number(elimWidth.value || 1.2));
+
+    // Hide or show base layer(s)
+    const baseIds = findGeohashBaseLayers();
+    setLayerVisibility(baseIds, !hideBase.checked);
+  }
+
+  applyBtn?.addEventListener('click', () => {
+    apply();            // updates the map layers
+    saveGeohashState(); // persists lists + styles
+  });
+
+  // Optional: prefill example
+  document.addEventListener('DOMContentLoaded', () => {
+    if (!taPlayable.value.trim()) {
+      taPlayable.value = ['w21zw4_1','w238pc_0','w21xq6_1','w21z4p_0'].join('\n');
+    }
+    if (!taEliminated.value.trim()) {
+      taEliminated.value = ['w21xqp_0','w21zkw_1','w21zv5_1','w21z90_1'].join('\n');
+    }
+  });
+
+})();
+</script>
+
+
+
+
 
 
 <!-- ===== Pixel Grid Modal ===== -->
