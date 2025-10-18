@@ -698,6 +698,8 @@ const applyIfReady = () => {
     mapgl.setPaintProperty('gh-elim-line', 'line-color', elimStroke.value || '#ff3355');
     mapgl.setPaintProperty('gh-elim-line', 'line-width', Number(elimWidth.value || 1.2));
 
+    updateEliminatedSavedLayer(src, eliminatedArr);
+
     const baseIds = (typeof findGeohashBaseLayers === 'function') ? findGeohashBaseLayers() : [];
     setLayerVisibility(baseIds, !hideBase.checked);
   } catch(e) {
@@ -799,7 +801,104 @@ const autoSave = (()=>{ let t; return ()=>{ clearTimeout(t); t=setTimeout(saveGe
     return null;
   }
 
-  
+// --- Build/refresh the saved "Eliminated Geohash" layer from the base source ---
+function updateEliminatedSavedLayer(sourceId, eliminatedIds) {
+  try {
+    if (!window.mapgl || !sourceId) return;
+
+    // 1) Try to obtain the full GeoJSON of the base geohashes source
+    const src = mapgl.getSource(sourceId);
+    const styleObj = mapgl.getStyle && mapgl.getStyle();
+    const styleSources = styleObj && styleObj.sources ? styleObj.sources : null;
+
+    // Try common MapLibre internal shapes
+    const raw =
+      (src && (src._data || (src._options && src._options.data))) ||
+      (styleSources && styleSources[sourceId] && styleSources[sourceId].data) ||
+      null;
+
+    if (!raw || !raw.features || !Array.isArray(raw.features)) {
+      console.warn('[Geohash] Could not read base GeoJSON for cloning; saved layer not updated.');
+      return;
+    }
+
+    // 2) Build fast lookup of eliminated ids
+    const list = Array.isArray(eliminatedIds) ? eliminatedIds : [];
+    const elimSet = new Set(list.map(function (s) { return String(s).toLowerCase(); }));
+
+    // 3) Pick features whose any candidate field matches an eliminated id
+    // Use fallback fields if CANDIDATE_FIELDS is missing
+    const FIELDS = Array.isArray(window.CANDIDATE_FIELDS) && window.CANDIDATE_FIELDS.length
+      ? window.CANDIDATE_FIELDS
+      : ['geohash', 'name', 'id', 'description'];
+
+    const outFeatures = [];
+    for (var i = 0; i < raw.features.length; i++) {
+      const f = raw.features[i];
+      const p = (f && f.properties) ? f.properties : {};
+      var matched = false;
+      for (var j = 0; j < FIELDS.length; j++) {
+        const field = FIELDS[j];
+        const v = (p[field] != null) ? String(p[field]).toLowerCase() : '';
+        if (elimSet.has(v)) { matched = true; break; }
+      }
+      if (!matched) continue;
+
+      // Pull style inputs safely (no optional chaining)
+      const _fill   = (typeof elimFill   !== 'undefined' && elimFill && elimFill.value)     ? elimFill.value : '#ff3355';
+      const _fillOp = (typeof elimFillOp !== 'undefined' && elimFillOp && elimFillOp.value) ? Number(elimFillOp.value) : 0.22;
+      const _stroke = (typeof elimStroke !== 'undefined' && elimStroke && elimStroke.value) ? elimStroke.value : '#ff3355';
+      const _width  = (typeof elimWidth  !== 'undefined' && elimWidth && elimWidth.value)   ? Number(elimWidth.value)  : 1.2;
+
+      outFeatures.push({
+        type: 'Feature',
+        geometry: f.geometry,
+        properties: Object.assign({}, p, {
+          // stable key: use geohash/name/id if present
+          fid: String(p._gid != null ? p._gid :
+                      p.fid != null ? p.fid :
+                      p.geohash != null ? p.geohash :
+                      p.id != null ? p.id :
+                      p.name != null ? p.name : (outFeatures.length + 1)),
+          _gid: String(p._gid != null ? p._gid :
+                       p.fid != null ? p.fid :
+                       p.geohash != null ? p.geohash :
+                       p.id != null ? p.id :
+                       p.name != null ? p.name : (outFeatures.length + 1)),
+          hidden: false,
+          _ts: Date.now(),
+
+          // Style props so GL + Leaflet engines render correctly
+          _fill: _fill,
+          _fillOpacity: _fillOp,
+          _stroke: _stroke,
+          _strokeOpacity: 1,
+          _weight: _width
+        })
+      });
+    }
+
+    // 4) Upsert the saved layer and paint it
+    if (typeof window.getOrCreateLayerByName !== 'function') {
+      console.warn('[Geohash] getOrCreateLayerByName missing; skipping saved layer write.');
+      return;
+    }
+    const entry = getOrCreateLayerByName('Eliminated Geohash');
+    entry.data = { type: 'FeatureCollection', features: outFeatures };
+    entry.items = (typeof window.rebuildItemsFromFeatures === 'function')
+      ? rebuildItemsFromFeatures(outFeatures)
+      : [];
+
+    // Refresh both engines + persist (only call helpers if they exist)
+    try { if (typeof window.refreshGroupBoth === 'function') refreshGroupBoth(entry); } catch (e) {}
+    try { if (typeof window.applyVisibility  === 'function') applyVisibility(entry); } catch (e) {}
+    try { if (typeof window.renderLayers     === 'function') renderLayers(); } catch (e) {}
+    try { if (typeof window.saveState        === 'function') saveState(); } catch (e) {}
+  } catch (e) {
+    console.warn('[Geohash] updateEliminatedSavedLayer failed:', e);
+  }
+}
+
 
   // ===== Build or update overlay layers =====
   function ensureOverlayLayers(sourceId) {
@@ -845,6 +944,8 @@ const autoSave = (()=>{ let t; return ()=>{ clearTimeout(t); t=setTimeout(saveGe
     mapgl.setFilter(GL_LYR_ELIM_FILL, eliminatedFilter);
     mapgl.setFilter(GL_LYR_ELIM_LINE, eliminatedFilter);
 
+    
+
     // Styles
     mapgl.setPaintProperty(GL_LYR_PLAY_FILL, 'fill-color', playFill.value || '#00ff66');
     mapgl.setPaintProperty(GL_LYR_PLAY_FILL, 'fill-opacity', Number(playFillOp.value || 0.25));
@@ -855,6 +956,8 @@ const autoSave = (()=>{ let t; return ()=>{ clearTimeout(t); t=setTimeout(saveGe
     mapgl.setPaintProperty(GL_LYR_ELIM_FILL, 'fill-opacity', Number(elimFillOp.value || 0.22));
     mapgl.setPaintProperty(GL_LYR_ELIM_LINE, 'line-color', elimStroke.value || '#ff3355');
     mapgl.setPaintProperty(GL_LYR_ELIM_LINE, 'line-width', Number(elimWidth.value || 1.2));
+
+    updateEliminatedSavedLayer(sourceId, eliminatedArr);
 
     // Hide or show base layer(s)
     const baseIds = findGeohashBaseLayers();
