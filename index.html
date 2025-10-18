@@ -541,6 +541,36 @@ a{color:var(--accent)}
 
 // ---- Supabase persistence (project-scoped) ----
 const GEOHASH_PROJECT_ID = 'sqkii_mapper';
+  const TABLE = 'geohash_state';   // <- single-row table
+  const MAX_ITEMS = 30000;         // safety cap; raise if you need
+  const SAVE_DEBOUNCE_MS = 1000;    // debounce saves (ms)
+
+  let lastLoadedState = null;      // caches { lists, styles } from DB
+  let saveTimer = null;
+  let saveInFlight = false;
+
+  function normList(text) {
+    const seen = new Set(); const out = [];
+    (text || '').split(/\r?\n/)
+      .map(s => s.trim().toLowerCase()).filter(Boolean)
+      .forEach(s => {
+        const m = s.match(/^[0-9bcdefghjkmnpqrstuvwxyz]{3,8}_[01]$/i);
+        if (m && !seen.has(s)) { seen.add(s); out.push(s); }
+      });
+    return out;
+  }
+  function diffCounts(newArr, oldArr) {
+    const oldSet = new Set(oldArr || []), newSet = new Set(newArr || []);
+    let added = 0, removed = 0;
+    newSet.forEach(v => { if (!oldSet.has(v)) added++; });
+    oldSet.forEach(v => { if (!newSet.has(v)) removed++; });
+    return { added, removed };
+  }
+  function applyAndSaveDebounced() {
+    apply(); // render immediately
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveGeohashState, SAVE_DEBOUNCE_MS);
+  }
 
 // Expect a global `supabase` client already created earlier
 
@@ -576,8 +606,31 @@ async function loadGeohashState() {
   }
 }
 
+
+// Prefill Eliminated textarea from the saved app layer if DB/room didn’t load it
+openBtn?.addEventListener('click', () => {
+  try {
+    // Only hydrate if empty (don’t overwrite Supabase-loaded values)
+    if (taEliminated.value.trim()) return;
+    if (typeof window.getOrCreateLayerByName !== 'function') return;
+
+    const entry = getOrCreateLayerByName('Eliminated Geohash');
+    const feats = entry?.data?.features;
+    if (!Array.isArray(feats) || feats.length === 0) return;
+
+    const ids = feats.map(f => {
+      const p = f?.properties || {};
+      return String(p.geohash ?? p.name ?? p._gid ?? p.id ?? '').trim();
+    }).filter(Boolean);
+
+    if (ids.length) taEliminated.value = Array.from(new Set(ids)).join('\n');
+  } catch (_) {}
+});
+
+
 // === Geohash save queue + sanitizers (single copy) ===
-const GEOHASH_SAVE_DEBOUNCE_MS = 500;
+const GEOHASH_SAVE_DEBOUNCE_MS = 2000;
+const GEOHASH_MAX_ITEMS = 2500
 
 function gh_dedupe(list) {
   return Array.from(new Set((list || []).map(s => String(s).trim()).filter(Boolean)));
@@ -633,26 +686,53 @@ async function gh_flush(projectId) {
   }
 }
 
-function queueGeohashSaveInline(projectId, playableText, eliminatedText,
+function queueGeohashSaveInline(
+  projectId,
+  playableText, eliminatedText,
   playFill, playFillOp, playStroke, playWidth,
-  elimFill, elimFillOp, elimStroke, elimWidth) {
+  elimFill, elimFillOp, elimStroke, elimWidth
+) {
+  // Must have a room before we can persist
+  if (!currentRoomCode) return;
 
-  if (!currentRoomCode) return; // Can't save without a room
-
+  // 1) Normalize & sanitize inputs (your existing helpers)
   const lists = gh_sanitizeLists(playableText, eliminatedText);
   const styles = gh_sanitizeStyles(
     playFill, playFillOp, playStroke, playWidth,
     elimFill, elimFillOp, elimStroke, elimWidth
   );
 
-  const sig = gh_sig(currentRoomCode, lists, styles);
-  if (sig === gh_lastSig) return; // no changes → no write
+  // 2) Safety cap to avoid straining Supabase on giant pastes
+  const MAX = (typeof GEOHASH_MAX_ITEMS === 'number' ? GEOHASH_MAX_ITEMS : 10000);
+  const total = (lists.playable?.length || 0) + (lists.eliminated?.length || 0);
+  if (total > MAX) {
+    alert(`You pasted ${total} geohashes. Limit is ${MAX}. Please reduce or split the paste.`);
+    return; // IMPORTANT: do not update gh_lastSig if we refused the save
+  }
 
+  // 3) Skip no-op saves (signature of current state)
+  const sig = gh_sig(currentRoomCode, lists, styles);
+  if (sig === gh_lastSig) return; // nothing changed → no write
+
+  // 4) Queue the state and debounce a single flush
   gh_lastSig = sig;
   gh_queued = { lists, styles };
+
   clearTimeout(gh_timer);
-  gh_timer = setTimeout(() => gh_flush(currentRoomCode), GEOHASH_SAVE_DEBOUNCE_MS);
+  const DEBOUNCE = (typeof GEOHASH_SAVE_DEBOUNCE_MS === 'number' ? GEOHASH_SAVE_DEBOUNCE_MS : 900);
+
+  gh_timer = setTimeout(() => {
+    // If your implementation tracks an in-flight write, reschedule once
+    if (typeof gh_inFlight !== 'undefined' && gh_inFlight) {
+      // try again after the same debounce window
+      clearTimeout(gh_timer);
+      gh_timer = setTimeout(() => gh_flush(currentRoomCode), DEBOUNCE);
+      return;
+    }
+    gh_flush(currentRoomCode);
+  }, DEBOUNCE);
 }
+
 
 async function saveGeohashState() {
   if (!window.supabase || !currentRoomCode) return;
@@ -667,6 +747,16 @@ async function saveGeohashState() {
     console.warn('saveGeohashState error:', e);
   }
 }
+
+function parseIdList(text) {
+  return Array.from(new Set(
+    String(text || '')
+      .split(/[\s,]+/)          // split on commas or any whitespace
+      .map(s => s.replace(/,$/, '').trim()) // strip trailing commas
+      .filter(Boolean)          // drop empties
+  ));
+}
+
 
 // --- Instant apply (debounced) on input/paste + style tweaks ---
 const ghDebounce = (fn, ms=450) => { let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; };
@@ -699,6 +789,9 @@ const applyIfReady = () => {
     mapgl.setPaintProperty('gh-elim-line', 'line-width', Number(elimWidth.value || 1.2));
 
     updateEliminatedSavedLayer(src, eliminatedArr);
+    if (Array.isArray(eliminatedArr) && eliminatedArr.length > 0) {
+      updateEliminatedSavedLayer(src, eliminatedArr);
+    }
 
     const baseIds = (typeof findGeohashBaseLayers === 'function') ? findGeohashBaseLayers() : [];
     setLayerVisibility(baseIds, !hideBase.checked);
@@ -707,7 +800,7 @@ const applyIfReady = () => {
   }
 };
 
-const autoApply = ghDebounce(() => { applyIfReady(); saveGeohashState(); }, 500);
+const autoApply = ghDebounce(() => { applyIfReady(); saveGeohashState(); }, GEOHASH_SAVE_DEBOUNCE_MS);
 
 // Textareas: react to typing and paste (comma/newline both supported by parser)
 [taPlayable, taEliminated].forEach(el => {
@@ -802,9 +895,13 @@ const autoSave = (()=>{ let t; return ()=>{ clearTimeout(t); t=setTimeout(saveGe
   }
 
 // --- Build/refresh the saved "Eliminated Geohash" layer from the base source ---
-function updateEliminatedSavedLayer(sourceId, eliminatedIds) {
-  try {
-    if (!window.mapgl || !sourceId) return;
+ function updateEliminatedSavedLayer(sourceId, eliminatedIds) {
+   try {
+     if (!window.mapgl || !sourceId) return;
+     if (!window.mapgl || !sourceId) return;
+     // NEW: never overwrite the saved layer with an empty list
+     if (!Array.isArray(eliminatedIds) || eliminatedIds.length === 0) return;
+
 
     // 1) Try to obtain the full GeoJSON of the base geohashes source
     const src = mapgl.getSource(sourceId);
@@ -958,6 +1055,9 @@ function updateEliminatedSavedLayer(sourceId, eliminatedIds) {
     mapgl.setPaintProperty(GL_LYR_ELIM_LINE, 'line-width', Number(elimWidth.value || 1.2));
 
     updateEliminatedSavedLayer(sourceId, eliminatedArr);
+    if (Array.isArray(eliminatedArr) && eliminatedArr.length > 0) {
+      updateEliminatedSavedLayer(sourceId, eliminatedArr);
+    }
 
     // Hide or show base layer(s)
     const baseIds = findGeohashBaseLayers();
@@ -965,9 +1065,12 @@ function updateEliminatedSavedLayer(sourceId, eliminatedIds) {
   }
 
   applyBtn?.addEventListener('click', () => {
-    apply();            // updates the map layers
-    saveGeohashState(); // persists lists + styles
+    apply();
+    // one debounced save after apply
+    clearTimeout(window.__gh_apply_timer);
+    window.__gh_apply_timer = setTimeout(saveGeohashState, GEOHASH_SAVE_DEBOUNCE_MS);
   });
+
 
 // --- Expose applyIfReady globally so joinRoom can use it ---
   window.applyGeohashOverlays = applyIfReady;
@@ -990,12 +1093,18 @@ function updateEliminatedSavedLayer(sourceId, eliminatedIds) {
     }
   })();
 
-  // Optional: prefill example
+  // Optional: prefill example (only if no saved data and both textareas are empty)
   document.addEventListener('DOMContentLoaded', () => {
-    if (!taPlayable.value.trim()) {
-      taPlayable.value = ['w21zw4_1','w238pc_0','w21xq6_1','w21z4p_0'].join('\n');
-    }
-    if (!taEliminated.value.trim()) {
+    const hasSaved =
+      typeof getOrCreateLayerByName === 'function' &&
+      Array.isArray(getOrCreateLayerByName('Eliminated Geohash')?.data?.features) &&
+      getOrCreateLayerByName('Eliminated Geohash').data.features.length > 0;
+
+    const playableEmpty  = !taPlayable.value.trim();
+    const eliminatedEmpty = !taEliminated.value.trim();
+
+    if (!hasSaved && playableEmpty && eliminatedEmpty) {
+      taPlayable.value   = ['w21zw4_1','w238pc_0','w21xq6_1','w21z4p_0'].join('\n');
       taEliminated.value = ['w21xqp_0','w21zkw_1','w21zv5_1','w21z90_1'].join('\n');
     }
   });
